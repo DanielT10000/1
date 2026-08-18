@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSS/SVG Lava Lamp</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #121212;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: sans-serif;
+        }
+
+        .lamp-wrapper {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* The top cap of the lamp */
+        .top-cap {
+            width: 60px;
+            height: 30px;
+            background: linear-gradient(to right, #4a4a4a, #7a7a7a, #4a4a4a);
+            border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+            z-index: 2;
+        }
+
+        /* The glass container */
+        .glass {
+            width: 120px;
+            height: 350px;
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 2px solid rgba(255, 255, 255, 0.2);
+            border-right: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 40px 40px 20px 20px;
+            position: relative;
+            overflow: hidden;
+            /* This SVG filter is what makes the blobs merge together! */
+            filter: url(#goo); 
+            box-shadow: inset 0 0 20px rgba(255, 87, 34, 0.2);
+        }
+
+        /* The metallic base */
+        .base {
+            width: 100px;
+            height: 80px;
+            background: linear-gradient(to right, #4a4a4a, #7a7a7a, #4a4a4a);
+            border-radius: 10px 10px 20px 20px;
+            position: relative;
+            top: -10px;
+            z-index: 2;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+
+        /* The Lava Blobs */
+        .lava {
+            position: absolute;
+            background: linear-gradient(135deg, #ff0055, #ff9900);
+            border-radius: 50%;
+            bottom: -20px;
+        }
+
+        /* Individual blob styling and animation timings */
+        .blob1 {
+            width: 70px; height: 70px;
+            left: 10px;
+            animation: float 7s infinite alternate ease-in-out;
+        }
+        
+        .blob2 {
+            width: 50px; height: 50px;
+            left: 40px;
+            animation: float 5s infinite alternate ease-in-out 1s;
+        }
+        
+        .blob3 {
+            width: 80px; height: 60px;
+            left: 20px;
+            animation: float 9s infinite alternate ease-in-out 2s;
+        }
+        
+        .blob4 {
+            width: 40px; height: 40px;
+            left: 60px;
+            animation: float 4s infinite alternate ease-in-out 0.5s;
+        }
+
+        .blob5 {
+            width: 90px; height: 40px;
+            left: 15px;
+            bottom: -10px;
+            /* This one stays mostly at the bottom to act as the heat source mass */
+            animation: pulse 4s infinite alternate ease-in-out;
+        }
+
+        /* Animations */
+        @keyframes float {
+            0% {
+                transform: translateY(0) scale(1) rotate(0deg);
+            }
+            50% {
+                transform: translateY(-150px) scale(1.1) rotate(10deg);
+            }
+            100% {
+                transform: translateY(-320px) scale(0.9) rotate(-10deg);
+            }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1) translateX(0); }
+            100% { transform: scale(1.1) translateX(5px); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="lamp-wrapper">
+        <div class="top-cap"></div>
+        <div class="glass">
+            <div class="lava blob1"></div>
+            <div class="lava blob2"></div>
+            <div class="lava blob3"></div>
+            <div class="lava blob4"></div>
+            <div class="lava blob5"></div>
+        </div>
+        <div class="base"></div>
+    </div>
+
+    <svg style="width: 0; height: 0; position: absolute;">
+        <filter id="goo">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
+            <feColorMatrix in="blur" mode="matrix" values="
+                1 0 0 0 0  
+                0 1 0 0 0  
+                0 0 1 0 0  
+                0 0 0 18 -7" result="goo" />
+            <feBlend in="SourceGraphic" in2="goo" />
+        </filter>
+    </svg>
+
+</body>
+</html>

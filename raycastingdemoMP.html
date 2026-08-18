@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>raycasting demo – multiplayer edition</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { margin:0; overflow:hidden; background:#000; font-family:Arial; image-rendering:pixelated; }
+  canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; }
+  #ui { position:absolute; top:10px; left:10px; color:#0f0; background:rgba(0,0,0,0.7); padding:8px 12px; border-radius:4px; font-size:14px; pointer-events:none; z-index:20; }
+  #minimap { position:absolute; top:10px; right:10px; border:2px solid #0f0; image-rendering:pixelated; z-index:20; }
+  #crosshair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:28px; color:#fff8; pointer-events:none; z-index:10; }
+  #status { position:absolute; bottom:10px; left:10px; color:#ff0; background:rgba(0,0,0,0.7); padding:6px 10px; border-radius:4px; font-size:13px; z-index:20; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="ui">Health: <span id="hp">100</span>  |  Kills: <span id="kills">0</span></div>
+<canvas id="minimap" width="90" height="90"></canvas>
+<div id="crosshair">+</div>
+<canvas id="screen"></canvas>
+<div id="status">Connecting to multiplayer...</div>
+
+<script>
+const screen = document.getElementById('screen');
+const ctx = screen.getContext('2d', {alpha:false});
+const mini = document.getElementById('minimap');
+const mctx = mini.getContext('2d');
+let w = screen.width = innerWidth;
+let h = screen.height = innerHeight;
+addEventListener('resize', () => {
+  w = screen.width = innerWidth;
+  h = screen.height = innerHeight;
+});
+
+
+let ws = null;
+let myId = null;
+let players = {};           
+let otherProjectiles = [];
+
+const status = document.getElementById('status');
+
+function connectMultiplayer() {
+  ws = new WebSocket('ws://localhost:8080');   
+
+  ws.onopen = () => {
+    status.textContent = 'Connected – waiting for players...';
+    status.style.color = '#0f0';
+  };
+
+  ws.onmessage = e => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.type === 'init') {
+        myId = d.yourId;
+        players = d.players || {};
+        status.textContent = `You are player #${myId}`;
+      } else if (d.type === 'join') {
+        players[d.id] = {x:d.x, y:d.y, dirX:d.dirX, dirY:d.dirY, health:d.health, color:d.color};
+      } else if (d.type === 'move') {
+        if (players[d.id]) Object.assign(players[d.id], {x:d.x,y:d.y,dirX:d.dirX,dirY:d.dirY});
+      } else if (d.type === 'shoot') {
+        otherProjectiles.push({x:d.x,y:d.y,dx:d.dirX,dy:d.dirY,life:1.2,owner:d.id});
+      } else if (d.type === 'hit') {
+        if (players[d.targetId]) players[d.targetId].health = d.health;
+        if (d.targetId === myId) {
+          player.health = d.health;
+          document.getElementById('hp').textContent = Math.max(0, player.health|0);
+          if (player.health <= 0) status.textContent = 'You were fragged!';
+        }
+      } else if (d.type === 'leave') {
+        delete players[d.id];
+      }
+    } catch(err) {}
+  };
+
+  ws.onclose = () => {
+    status.textContent = 'Disconnected – reconnecting...';
+    status.style.color = '#f44';
+    setTimeout(connectMultiplayer, 1500);
+  };
+}
+connectMultiplayer();
+
+
+setInterval(() => {
+  if (ws?.readyState === 1) {
+    ws.send(JSON.stringify({
+      type: 'move',
+      x: player.x, y: player.y,
+      dirX: player.dirX, dirY: player.dirY
+    }));
+  }
+}, 50);
+
+
+const TEX_SIZE = 64;
+const MAP_W = 24;
+const MAP_H = 24;
+const MAP = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,2,2,2,2,2,0,0,0,0,0,3,0,3,0,3,0,0,0,1],
+  [1,0,0,0,0,2,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,2,0,0,0,2,0,0,0,0,0,3,0,0,0,3,0,0,0,1],
+  [1,0,0,0,0,2,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,2,2,0,2,2,0,0,0,0,0,3,0,3,0,3,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,4,0,4,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,4,0,0,0,0,5,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,4,0,4,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,4,0,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+const textures = Array(16).fill().map(() => new Uint32Array(TEX_SIZE * TEX_SIZE));
+const floorTex = new Uint32Array(TEX_SIZE * TEX_SIZE);
+const ceilTex  = new Uint32Array(TEX_SIZE * TEX_SIZE);
+
+function generateTextures() {
+  for (let i = 0; i < 8; i++) {
+    const baseR = 80 + i * 20, baseG = 60 + i * 15, baseB = 40;
+    for (let x = 0; x < TEX_SIZE; x++) {
+      for (let y = 0; y < TEX_SIZE; y++) {
+        const noise = ((x * 3) ^ (y * 5)) & 31;
+        const r = baseR + noise;
+        const g = baseG + (noise >> 1);
+        const b = baseB + (noise >> 2);
+        textures[i][y * TEX_SIZE + x] = 0xff000000 | (r << 16) | (g << 8) | b;
+      }
+    }
+  }
+  
+  for (let i = 8; i < 12; i++) {
+    for (let x = 0; x < TEX_SIZE; x++) {
+      for (let y = 0; y < TEX_SIZE; y++) {
+        const dx = x - 32, dy = y - 32;
+        if (Math.hypot(dx, dy) > 31) continue;
+        let r = 120 + i * 30, g = 40 + i * 20, b = 180 - i * 30;
+        if (Math.abs(dx) < 6 && Math.abs(dy + 8) < 6) { r = g = b = 255; }
+        textures[i][y * TEX_SIZE + x] = 0xff000000 | (r << 16) | (g << 8) | b;
+      }
+    }
+  }
+  
+  for (let x = 0; x < TEX_SIZE; x++) {
+    for (let y = 0; y < TEX_SIZE; y++) {
+      const dx = x - 32, dy = y - 32;
+      if (Math.hypot(dx, dy) > 31) continue;
+      textures[13][y * TEX_SIZE + x] = 0xff000000 | (100 << 16) | (180 << 8) | 220;
+    }
+  }
+  
+  for (let i = 0; i < TEX_SIZE * TEX_SIZE; i++) {
+    const tx = i % TEX_SIZE, ty = i / TEX_SIZE | 0;
+    const n = Math.sin(tx * 0.18) * 12 + Math.cos(ty * 0.22) * 12;
+    floorTex[i] = 0xff000000 | ((75 + n) << 16) | ((70 + n) << 8) | (65 + n);
+    ceilTex[i]  = 0xff000000 | ((35 + n * 0.6) << 16) | ((35 + n * 0.6) << 8) | (55 + n * 0.4);
+  }
+}
+generateTextures();
+
+const player = {
+  x: 22.5, y: 12.5,
+  dirX: -1, dirY: 0,
+  planeX: 0, planeY: 0.66,
+  health: 100
+};
+
+let keys = {};
+let mouseLocked = false;
+let kills = 0;
+let flash = 0;
+const enemies = [];
+const projectiles = [];
+
+function spawnRandomEnemies(count = 7 + Math.random() * 6 | 0) {
+  enemies.length = 0;
+  const texPool = [8,9,10,11];
+  for (let i = 0; i < count; i++) {
+    let x, y, attempts = 200;
+    do {
+      x = 1.5 + Math.random() * (MAP_W - 3);
+      y = 1.5 + Math.random() * (MAP_H - 3);
+      attempts--;
+    } while (
+      attempts > 0 &&
+      (MAP[Math.floor(x)][Math.floor(y)] !== 0 ||
+       Math.hypot(x - player.x, y - player.y) < 4)
+    );
+    if (attempts > 0) {
+      enemies.push({
+        x, y,
+        tex: texPool[Math.random() * texPool.length | 0],
+        alive: true
+      });
+    }
+  }
+}
+spawnRandomEnemies();
+
+addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
+screen.addEventListener('click', () => screen.requestPointerLock());
+addEventListener('pointerlockchange', () => mouseLocked = document.pointerLockElement === screen);
+addEventListener('mousemove', e => {
+  if (!mouseLocked) return;
+  const rot = e.movementX * 0.002;
+  const c = Math.cos(rot), s = Math.sin(rot);
+  const od = player.dirX;
+  player.dirX = od * c - player.dirY * s;
+  player.dirY = od * s + player.dirY * c;
+  const op = player.planeX;
+  player.planeX = op * c - player.planeY * s;
+  player.planeY = op * s + player.planeY * c;
+});
+screen.addEventListener('mousedown', () => {
+  if (!mouseLocked) return;
+  shoot();
+});
+
+function shoot() {
+  const now = performance.now() / 1000;
+  if (shoot.last && now - shoot.last < 0.16) return;
+  shoot.last = now;
+  flash = 0.08;
+  projectiles.push({
+    x: player.x,
+    y: player.y,
+    dx: player.dirX,
+    dy: player.dirY,
+    life: 1.2
+  });
+
+  
+  if (ws?.readyState === 1) {
+    ws.send(JSON.stringify({
+      type: 'shoot',
+      x: player.x, y: player.y,
+      dirX: player.dirX, dirY: player.dirY
+    }));
+  }
+
+  
+  for (const [id, p] of Object.entries(players)) {
+    if (p.health <= 0) continue;
+    const dx = p.x - player.x;
+    const dy = p.y - player.y;
+    const dist = Math.hypot(dx, dy);
+    const angle = Math.abs(Math.atan2(dy, dx) - Math.atan2(player.dirY, player.dirX));
+    if (angle < 0.18 && dist < 18 && Math.random() < 0.9) {
+      const newHealth = Math.max(0, p.health - 25);
+      if (ws?.readyState === 1) {
+        ws.send(JSON.stringify({
+          type: 'hit',
+          targetId: id,
+          health: newHealth
+        }));
+      }
+      if (newHealth <= 0) kills++;
+      document.getElementById('kills').textContent = kills;
+    }
+  }
+}
+
+function safeMove(obj, dx, dy) {
+  const nx = obj.x + dx;
+  const ny = obj.y + dy;
+  const ix = Math.floor(nx);
+  const iy = Math.floor(ny);
+  if (MAP[ix]?.[Math.floor(obj.y)] === 0) obj.x = nx;
+  if (MAP[Math.floor(obj.x)]?.[iy] === 0) obj.y = ny;
+}
+
+function update(dt) {
+  const moveSpeed = dt * (keys['shift'] ? 7.2 : 4.8);
+  let dx = 0, dy = 0;
+  if (keys['w'] || keys['arrowup'])    { dx += player.dirX * moveSpeed; dy += player.dirY * moveSpeed; }
+  if (keys['s'] || keys['arrowdown'])  { dx -= player.dirX * moveSpeed; dy -= player.dirY * moveSpeed; }
+  if (keys['a'] || keys['arrowleft'])  { dx -= player.dirY * moveSpeed; dy += player.dirX * moveSpeed; }
+  if (keys['d'] || keys['arrowright']) { dx += player.dirY * moveSpeed; dy -= player.dirX * moveSpeed; }
+  safeMove(player, dx, dy);
+
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const dx = player.x - e.x;
+    const dy = player.y - e.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.6) {
+      player.health = Math.max(0, player.health - 35 * dt);
+      document.getElementById('hp').textContent = player.health | 0;
+    }
+    if (dist > 0.4) {
+      const speed = dt * 1.35;
+      safeMove(e, (dx / dist) * speed, (dy / dist) * speed);
+    }
+  }
+
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.x += p.dx * 28 * dt;
+    p.y += p.dy * 28 * dt;
+    p.life -= dt;
+    if (p.life <= 0 || MAP[Math.floor(p.x)]?.[Math.floor(p.y)] !== 0) {
+      projectiles.splice(i, 1);
+    }
+  }
+
+  for (let i = otherProjectiles.length - 1; i >= 0; i--) {
+    const p = otherProjectiles[i];
+    p.x += p.dx * 28 * dt;
+    p.y += p.dy * 28 * dt;
+    p.life -= dt;
+    if (p.life <= 0) otherProjectiles.splice(i, 1);
+  }
+
+  if (flash > 0) flash -= dt;
+}
+
+function drawMinimap() {
+  const s = mini.width / MAP_W;
+  mctx.fillStyle = '#111'; mctx.fillRect(0,0,mini.width,mini.height);
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      if (MAP[x][y] === 0) continue;
+      mctx.fillStyle = MAP[x][y] === 1 ? '#555' :
+                       MAP[x][y] === 2 ? '#933' :
+                       MAP[x][y] === 3 ? '#339' :
+                       MAP[x][y] === 4 ? '#777' : '#999';
+      mctx.fillRect(x * s, y * s, s, s);
+    }
+  }
+  mctx.fillStyle = '#0f0';
+  mctx.fillRect(player.x * s - 3, player.y * s - 3, 6, 6);
+  mctx.strokeStyle = '#0f0'; mctx.lineWidth = 2;
+  mctx.beginPath();
+  mctx.moveTo(player.x * s, player.y * s);
+  mctx.lineTo(player.x * s + player.dirX * 12, player.y * s + player.dirY * 12);
+  mctx.stroke();
+
+  
+  Object.values(players).forEach(p => {
+    if (p.health > 0) {
+      mctx.fillStyle = p.color || '#f0f';
+      mctx.fillRect(p.x * s - 3, p.y * s - 3, 6, 6);
+    }
+  });
+
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    mctx.fillStyle = '#f44';
+    mctx.fillRect(e.x * s - 2.5, e.y * s - 2.5, 5, 5);
+  }
+}
+
+function render() {
+  const img = ctx.createImageData(w, h);
+  const buf = new Uint32Array(img.data.buffer);
+  const zbuf = new Float32Array(w);
+  const hh = h / 2;
+  for (let x = 0; x < w; x++) {
+    const camX = 2 * x / w - 1;
+    const rayX = player.dirX + player.planeX * camX;
+    const rayY = player.dirY + player.planeY * camX;
+    let mapX = player.x | 0;
+    let mapY = player.y | 0;
+    const deltaX = rayX === 0 ? 1e30 : Math.abs(1 / rayX);
+    const deltaY = rayY === 0 ? 1e30 : Math.abs(1 / rayY);
+    const stepX = rayX < 0 ? -1 : 1;
+    const stepY = rayY < 0 ? -1 : 1;
+    let sideDistX = rayX < 0 ? (player.x - mapX) * deltaX : (mapX + 1 - player.x) * deltaX;
+    let sideDistY = rayY < 0 ? (player.y - mapY) * deltaY : (mapY + 1 - player.y) * deltaY;
+    let hit = false, side = 0;
+    while (!hit) {
+      if (sideDistX < sideDistY) {
+        sideDistX += deltaX;
+        mapX += stepX;
+        side = 0;
+      } else {
+        sideDistY += deltaY;
+        mapY += stepY;
+        side = 1;
+      }
+      if (mapX < 0 || mapX >= MAP_W || mapY < 0 || mapY >= MAP_H) break;
+      if (MAP[mapX][mapY]) hit = true;
+    }
+    let perpDist = hit ? (side === 0 ? sideDistX - deltaX : sideDistY - deltaY) : 999;
+    perpDist = Math.max(0.001, perpDist);
+    zbuf[x] = perpDist;
+    const lineH = (h / perpDist) | 0;
+    let drawStart = Math.max(0, (hh - lineH / 2) | 0);
+    let drawEnd   = Math.min(h - 1, (hh + lineH / 2) | 0);
+    const texNum = MAP[mapX][mapY] - 1;
+    let wallX = side === 0 ? player.y + perpDist * rayY : player.x + perpDist * rayX;
+    wallX -= wallX | 0;
+    let texX = (wallX * TEX_SIZE) | 0;
+    if ((side === 0 && rayX > 0) || (side === 1 && rayY < 0)) {
+      texX = TEX_SIZE - texX - 1;
+    }
+    texX = Math.max(0, Math.min(texX, TEX_SIZE - 1));
+    const step = TEX_SIZE / lineH;
+    let texPos = (drawStart - hh + lineH / 2) * step;
+    const fog = Math.min(1, perpDist / 14);
+    for (let y = drawStart; y < drawEnd; y++) {
+      const texY = (texPos | 0) & (TEX_SIZE - 1);
+      texPos += step;
+      let color = textures[texNum][texY * TEX_SIZE + texX];
+      if (side === 1) color = (color >> 1) & 0x7f7f7f;
+      let r = (color >> 16) & 255;
+      let g = (color >> 8)  & 255;
+      let b = color & 255;
+      const shade = 1 - fog;
+      buf[y * w + x] = 0xff000000 |
+        (r * shade << 16) |
+        (g * shade << 8)  |
+        (b * shade);
+    }
+    for (let y = drawEnd; y < h; y++) {
+      const p = y - hh;
+      const rowDist = hh / p;
+      const floorX = player.x + rowDist * rayX;
+      const floorY = player.y + rowDist * rayY;
+      const tx = (floorX * TEX_SIZE) & (TEX_SIZE - 1);
+      const ty = (floorY * TEX_SIZE) & (TEX_SIZE - 1);
+      const fogF = Math.min(1, rowDist / 14);
+      const shade = 1 - fogF;
+      let col = floorTex[ty * TEX_SIZE + tx];
+      buf[y * w + x] = (col * shade) & 0xffffff;
+      col = ceilTex[ty * TEX_SIZE + tx];
+      buf[(h - 1 - y) * w + x] = (col * shade) & 0xffffff;
+    }
+  }
+
+  
+  const sprites = [];
+  enemies.forEach(e => { if (e.alive) sprites.push({x:e.x, y:e.y, tex:e.tex, dist:Math.hypot(e.x-player.x, e.y-player.y)}); });
+  projectiles.forEach(p => sprites.push({x:p.x, y:p.y, tex:12, dist:Math.hypot(p.x-player.x, p.y-player.y)}));
+  otherProjectiles.forEach(p => sprites.push({x:p.x, y:p.y, tex:12, dist:Math.hypot(p.x-player.x, p.y-player.y)}));
+
+  
+  Object.entries(players).forEach(([id, p]) => {
+    if (id === String(myId) || p.health <= 0) return;
+    sprites.push({
+      x: p.x, y: p.y,
+      tex: 13,
+      dist: Math.hypot(p.x - player.x, p.y - player.y),
+      color: p.color
+    });
+  });
+
+  sprites.sort((a,b) => b.dist - a.dist);
+
+  for (const s of sprites) {
+    const spriteX = s.x - player.x;
+    const spriteY = s.y - player.y;
+    const invDet = 1.0 / (player.planeX * player.dirY - player.dirX * player.planeY);
+    const transformX = invDet * (player.dirY * spriteX - player.dirX * spriteY);
+    const transformY = invDet * (-player.planeY * spriteX + player.planeX * spriteY);
+    if (transformY <= 0) continue;
+    const spriteScreenX = (w / 2) * (1 + transformX / transformY);
+    const spriteHeight = Math.abs(h / transformY);
+    const spriteWidth  = Math.abs(h / transformY);
+    const drawStartY = Math.max(0, -spriteHeight / 2 + hh);
+    const drawEndY   = Math.min(h, spriteHeight / 2 + hh);
+    const drawStartX = Math.max(0, -spriteWidth / 2 + spriteScreenX);
+    const drawEndX   = Math.min(w, spriteWidth / 2 + spriteScreenX);
+    const fog = Math.min(1, transformY / 14);
+    for (let stripe = drawStartX | 0; stripe < drawEndX; stripe++) {
+      if (transformY > zbuf[stripe]) continue;
+      const texX = (((stripe - (-spriteWidth / 2 + spriteScreenX)) * TEX_SIZE / spriteWidth) | 0);
+      for (let y = drawStartY | 0; y < drawEndY; y++) {
+        const d = y * 256 - h * 128 + spriteHeight * 128;
+        const texY = ((d * TEX_SIZE / spriteHeight) / 256) | 0;
+        let color = textures[s.tex][texY * TEX_SIZE + texX];
+        if ((color & 0xff000000) === 0) continue;
+
+        let r = (color >> 16) & 255;
+        let g = (color >> 8)  & 255;
+        let b = color & 255;
+
+       
+        if (s.color) {
+          const tint = parseInt(s.color.slice(1), 16);
+          const tr = (tint >> 16) & 255;
+          const tg = (tint >> 8) & 255;
+          const tb = tint & 255;
+          r = (r * 0.5 + tr * 0.5) | 0;
+          g = (g * 0.5 + tg * 0.5) | 0;
+          b = (b * 0.5 + tb * 0.5) | 0;
+        }
+
+        const shade = 1 - fog;
+        buf[y * w + stripe] = 0xff000000 | (r*shade << 16) | (g*shade << 8) | (b*shade);
+      }
+    }
+  }
+
+  if (flash > 0) {
+    const i = flash / 0.08;
+    for (let x = w * 0.38 | 0; x < w * 0.62; x++) {
+      for (let y = h * 0.58 | 0; y < h * 0.88; y++) {
+        const idx = y * w + x;
+        let c = buf[idx];
+        let r = Math.min(255, ((c >> 16) & 255) + 180 * i);
+        let g = Math.min(255, ((c >> 8)  & 255) + 140 * i);
+        let b = Math.min(255, (c & 255) +  80 * i);
+        buf[idx] = 0xff000000 | (r << 16) | (g << 8) | b;
+      }
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  drawMinimap();
+}
+
+let lastTime = performance.now();
+function loop(time) {
+  const dt = Math.min(0.033, (time - lastTime) / 1000);
+  lastTime = time;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

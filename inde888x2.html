@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<title>God Jul!</title>
+<style>
+    /* Your existing styles remain here unchanged */
+    body, html {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background-image:
+            linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)),
+            url('https://images.unsplash.com/photo-1547036967-23d11aacaee0?auto=format&fit=crop&q=80&w=2000');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        color: white;
+        position: relative;
+    }
+    /* ... all your other existing CSS (lights, snow, #hilsen, etc.) ... */
+
+    /* === NEW: Info panel styles === */
+    #info-panel {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.92);
+        backdrop-filter: blur(10px);
+        color: #e0e0ff;
+        padding: 20px;
+        overflow-y: auto;
+        z-index: 9998;
+        display: none;
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 0.95rem;
+        line-height: 1.5;
+    }
+    #info-panel h2 {
+        color: #ffcc00;
+        border-bottom: 1px solid #444;
+        padding-bottom: 6px;
+        margin: 1.4em 0 0.6em;
+        font-size: 1.4rem;
+    }
+    #info-panel .entry {
+        margin: 0.4em 0;
+    }
+    #info-panel .key {
+        color: #88ff88;
+        font-weight: bold;
+        min-width: 260px;
+        display: inline-block;
+    }
+    #info-panel .value {
+        color: #ffddaa;
+        word-break: break-all;
+    }
+    #close-info {
+        position: fixed;
+        top: 15px;
+        right: 20px;
+        background: #ff3366;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        font-size: 1.6rem;
+        line-height: 38px;
+        text-align: center;
+        cursor: pointer;
+        z-index: 9999;
+        box-shadow: 0 0 12px rgba(0,0,0,0.6);
+    }
+    #close-info:hover { background: #ff6699; }
+</style>
+<!-- Load UAParser.js from CDN (required for User-Agent parsing) -->
+<script src="https://cdn.jsdelivr.net/npm/ua-parser-js@2.0.8/dist/ua-parser.min.js"></script>
+</head>
+<body>
+
+<!-- Your existing elements -->
+<div id="chrome-block">...</div>
+<div class="lights-container">...</div>
+<div class="snow-container" id="snow"></div>
+<div id="hilsen">God Jul</div>
+<audio id="bgAudio" loop autoplay muted playsinline>
+    <source src="JingleBells.mp3" type="audio/mpeg">
+</audio>
+<div class="hint">Klikk hvor som helst for å aktivere lyd • Best opplevelse i Edge / Brave / Firefox</div>
+
+<!-- NEW: Info panel (hidden by default) -->
+<div id="info-panel">
+    <button id="close-info">×</button>
+    <div id="info-content"></div>
+</div>
+
+<script>
+// Your existing script for snow, lights, gingerbread, audio activation on click, etc.
+// ... (keep everything you already have)
+
+// === NEW: Info gathering & display ===
+
+// Helpers
+function addSection(title) {
+    const cont = document.getElementById('info-content');
+    const h = document.createElement('h2');
+    h.textContent = title;
+    cont.appendChild(h);
+}
+
+function add(key, value) {
+    const cont = document.getElementById('info-content');
+    const div = document.createElement('div');
+    div.className = 'entry';
+    div.innerHTML = `<span class="key">${key}:</span> <span class="value">${value ?? '—'}</span>`;
+    cont.appendChild(div);
+}
+
+function formatTime(sec) {
+    if (sec === Infinity || sec < 0) return "∞ (not discharging / charging)";
+    if (sec === 0) return "0 s";
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    return `${h > 0 ? h + 'h ' : ''}${m}m ${s}s`;
+}
+
+// The info collector – runs only when "i" is pressed
+async function showDeviceInfo() {
+    const panel = document.getElementById('info-panel');
+    const content = document.getElementById('info-content');
+    content.innerHTML = ''; // clear previous
+
+    // === IP / Location ===
+    addSection("IP / Location");
+    try {
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+        add("IP Address", data.ip || "Unknown");
+        add("ISP / Org", data.org || data.company || "Unknown");
+        add("Country", data.country_name || "Unknown");
+        add("Region", data.region || "Unknown");
+        add("City", data.city || "Unknown");
+        add("Postal Code", data.postal || "Unknown");
+        add("Latitude", data.latitude || "Unknown");
+        add("Longitude", data.longitude || "Unknown");
+        add("Timezone (from IP)", data.timezone || "Unknown");
+    } catch(e) {
+        add("IP / Location", "Unavailable (check network / adblock)");
+    }
+
+    // === User Agent / Browser ===
+    addSection("User Agent / Browser");
+    const uaParser = new UAParser();
+    const uaResult = uaParser.getResult();
+    add("Device Vendor (UA)", uaResult.device.vendor || "Unknown");
+    add("Device Model (UA)", uaResult.device.model || "Unknown");
+    add("Device Type (UA)", uaResult.device.type || "Unknown");
+    add("OS Name", uaResult.os.name || "Unknown");
+    add("OS Version", uaResult.os.version || "Unknown");
+    add("Browser Name", uaResult.browser.name || "Unknown");
+    add("Browser Version", uaResult.browser.version || "Unknown");
+    add("Navigator Vendor", navigator.vendor || "Unknown");
+    add("Navigator Product", navigator.product || "Unknown");
+    add("UA String", navigator.userAgent);
+
+    // === Hardware Info ===
+    addSection("Hardware");
+    add("Logical CPU Cores", navigator.hardwareConcurrency || "Unknown");
+    add("Approx RAM (GB)", navigator.deviceMemory || "Unknown");
+
+    // === Screen / Display ===
+    addSection("Screen / Display");
+    add("Screen Resolution", `${screen.width} x ${screen.height}`);
+    add("Available Screen Size", `${screen.availWidth || "Unknown"} x ${screen.availHeight || "Unknown"}`);
+    add("Color Depth", screen.colorDepth || "Unknown");
+    add("Pixel Depth", screen.pixelDepth || "Unknown");
+    add("Device Pixel Ratio", window.devicePixelRatio || "Unknown");
+    add("Max Touch Points", navigator.maxTouchPoints || "0");
+    add("Touch Event Supported", ('ontouchstart' in window) ? "Yes" : "No");
+
+    // === WebGL / GPU ===
+    addSection("WebGL / GPU");
+    let webglVendor = "Unavailable", webglRenderer = "Unavailable";
+    try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (gl) {
+            const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            if (dbg) {
+                webglVendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
+                webglRenderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+            }
+        }
+    } catch(e) {}
+    add("WebGL Supported", (typeof document.createElement('canvas').getContext === 'function') ? "Yes" : "No");
+    add("WebGL Vendor", webglVendor);
+    add("WebGL Renderer", webglRenderer);
+
+    // WebGPU
+    if (navigator.gpu) {
+        try {
+            const adapter = await navigator.gpu.requestAdapter();
+            if (adapter) {
+                add("WebGPU Adapter Name", adapter.name || "Unknown");
+                add("WebGPU Max Texture 2D Dimension", adapter.limits?.maxTextureDimension2D || "Unknown");
+                add("WebGPU Supported Features", adapter.features ? Array.from(adapter.features).join(', ') : "None");
+            }
+        } catch(e) {
+            add("WebGPU Info", "Permission or unsupported");
+        }
+    } else {
+        add("WebGPU Support", "No");
+    }
+
+    // === Battery Info ===
+    addSection("Battery Info");
+    if (navigator.getBattery) {
+        try {
+            const bat = await navigator.getBattery();
+            add("Battery Level", `${Math.round(bat.level * 100)}%`);
+            add("Charging", bat.charging ? "Yes" : "No");
+            add("Charging Time", formatTime(bat.chargingTime));
+            add("Discharging Time", formatTime(bat.dischargingTime));
+        } catch(e) {
+            add("Battery Info", "Unavailable");
+        }
+    } else {
+        add("Battery API Support", "No");
+    }
+
+    // === The rest of your sections (Plugins, Camera/Mic, Audio Devices, Network, Storage, Sensors, Time/Locale, Codecs) ===
+    // ... (copy-paste them exactly as in your snippet here – they are unchanged)
+
+    // Show panel
+    panel.style.display = 'block';
+}
+
+// Close button
+document.getElementById('close-info').onclick = () => {
+    document.getElementById('info-panel').style.display = 'none';
+};
+
+// Trigger on "i" key press (anywhere on page)
+window.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'i' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        showDeviceInfo();
+    }
+});
+
+// Optional: also allow click on hint or something, but "i" key is clean & hidden
+</script>
+</body>
+</html>

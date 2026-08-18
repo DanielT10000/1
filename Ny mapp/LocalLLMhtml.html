@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neural Core Intelligence</title>
+  
+  <!-- Tailwind & Icons -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+  
+  <style>
+    body { 
+      font-family: 'Segoe UI', system_ui, sans-serif; 
+      background: #05050f;
+      overflow: hidden;
+    }
+
+    #neural-bg {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: -1;
+      opacity: 0.9;
+    }
+
+    /* Base Chat Bubble Styles */
+    .chat-bubble-user {
+      background: linear-gradient(135deg, #60a5fa, #3b82f6);
+      color: white;
+      border-radius: 24px 24px 8px 24px;
+      box-shadow: 0 0 35px rgba(96, 165, 250, 0.5);
+      white-space: pre-wrap;
+    }
+    .chat-bubble-ai {
+      background: rgba(15, 23, 42, 0.92);
+      color: #e0f2fe;
+      border: 1px solid rgba(147, 197, 253, 0.3);
+      border-radius: 24px 24px 24px 8px;
+      box-shadow: 0 0 30px rgba(96, 165, 250, 0.2);
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+
+    /* Glass Effect */
+    .glass {
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(147, 197, 253, 0.2);
+    }
+
+    .header-glow {
+      box-shadow: 0 0 40px rgba(96, 165, 250, 0.4);
+    }
+
+    /* Fancy Thinking Animation */
+    .thinking-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .thinking-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .thinking-dots span {
+      width: 8px;
+      height: 8px;
+      background: #60a5fa;
+      border-radius: 50%;
+      animation: neuralPulse 1.2s infinite ease-in-out;
+    }
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes neuralPulse {
+      0%, 100% { transform: scale(0.4); opacity: 0.5; }
+      50% { transform: scale(1.4); opacity: 1; }
+    }
+
+    /* === FANCY HOVER ANIMATIONS === */
+    .brain-hover {
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .brain-hover:hover {
+      transform: scale(1.15) rotate(-15deg);
+      box-shadow: 0 0 60px rgba(167, 139, 250, 0.9);
+    }
+
+    .glass-hover {
+      transition: all 0.3s ease;
+    }
+    .glass-hover:hover {
+      background: rgba(22, 33, 56, 0.8);
+      border-color: rgba(147, 197, 253, 0.4);
+    }
+
+    .chat-bubble-user, .chat-bubble-ai {
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      transform-origin: bottom right;
+    }
+    .chat-bubble-ai { transform-origin: bottom left; }
+    
+    .chat-bubble-user:hover {
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 0 15px 45px rgba(96, 165, 250, 0.7);
+    }
+    .chat-bubble-ai:hover {
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 0 15px 40px rgba(96, 165, 250, 0.35);
+      border-color: rgba(147, 197, 253, 0.6);
+    }
+
+    .input-hover {
+      transition: all 0.3s ease;
+    }
+    .input-hover:hover:not(:disabled) {
+      border-color: rgba(147, 197, 253, 0.8);
+      box-shadow: 0 0 25px rgba(96, 165, 250, 0.3);
+      transform: translateY(-1px);
+    }
+    
+    #prompt:focus {
+      box-shadow: 0 0 40px rgba(96, 165, 250, 0.7);
+      border-color: #93c5fd;
+      transform: translateY(-2px);
+    }
+
+    .btn-hover {
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .btn-hover:hover:not(:disabled) {
+      transform: scale(1.05) translateY(-2px);
+      box-shadow: 0 10px 30px rgba(96, 165, 250, 0.6);
+    }
+    .btn-hover:active:not(:disabled) {
+      transform: scale(0.95);
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(147, 197, 253, 0.2); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(147, 197, 253, 0.4); }
+  </style>
+</head>
+<body class="h-full text-white flex flex-col">
+  <!-- Neural Canvas Background -->
+  <canvas id="neural-bg" class="fixed inset-0"></canvas>
+
+  <div class="max-w-5xl mx-auto w-full h-full flex flex-col relative z-10 px-4 py-6 md:p-8">
+    
+    <!-- Header -->
+    <div class="glass glass-hover border-b border-blue-400/40 p-6 flex items-center gap-6 header-glow z-20 rounded-t-3xl">
+      <div class="brain-hover w-16 h-16 bg-gradient-to-br from-blue-400 via-indigo-400 to-violet-500 rounded-3xl flex items-center justify-center text-4xl shadow-2xl shadow-blue-500/60 relative cursor-pointer flex-shrink-0">
+        <span class="absolute inset-0 bg-blue-400/30 rounded-3xl animate-ping"></span>
+        🧠
+      </div>
+      <div class="cursor-default flex-1">
+        <h1 class="text-3xl md:text-4xl font-light tracking-[-2px] transition hover:text-blue-200">Neural Core Intelligence</h1>
+        <p class="text-blue-300 text-xs md:text-sm tracking-widest font-medium mt-1 flex items-center gap-2">
+          <span id="status-dot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+          <span id="status-text" class="text-amber-500">AWAITING INITIALIZATION</span>
+        </p>
+      </div>
+      <div class="ml-auto flex items-center gap-4">
+        <button id="init-btn" class="btn-hover px-6 py-3 bg-blue-500/20 text-blue-300 text-xs md:text-sm font-bold tracking-widest rounded-3xl border border-blue-400/30 hover:bg-blue-500/40 hover:text-white transition-all cursor-pointer shadow-[0_0_15px_rgba(96,165,250,0.2)] disabled:opacity-50 disabled:cursor-not-allowed uppercase">
+          Initialize Link
+        </button>
+      </div>
+    </div>
+
+    <!-- Progress Bar (Hidden by default) -->
+    <div id="progress-container" class="hidden glass border-b border-blue-400/30 p-5 z-10">
+      <div class="flex items-center justify-between mb-3">
+        <span id="progress-text" class="text-xs font-bold text-blue-300 uppercase tracking-widest">Synapsing with Neural Lattice...</span>
+      </div>
+      <div class="w-full h-1.5 bg-slate-900/80 rounded-full overflow-hidden border border-blue-900/30">
+        <div id="progress-bar" class="h-full bg-blue-400 w-0 transition-all duration-300 shadow-[0_0_10px_#60a5fa]"></div>
+      </div>
+    </div>
+
+    <!-- Chat Area -->
+    <div id="chat" class="glass flex-1 overflow-y-auto p-6 md:p-8 space-y-8 scroll-smooth border-x border-blue-400/20 bg-slate-950/20">
+      
+      <!-- Welcome Message -->
+      <div class="h-full flex flex-col items-center justify-center text-center p-8 opacity-60 cursor-default">
+        <i class="fas fa-microchip text-6xl text-blue-400 mb-6 drop-shadow-[0_0_15px_rgba(96,165,250,0.5)]"></i>
+        <h3 class="text-2xl font-bold text-white mb-3 tracking-tight">Private Local Execution</h3>
+        <p class="text-blue-200 max-w-md text-sm leading-relaxed">
+          Initialize the neural core to begin. Data processing occurs directly on your local hardware via WebGPU. No external server connections are established.
+        </p>
+      </div>
+
+    </div>
+
+    <!-- Input Area -->
+    <div class="glass glass-hover p-6 border-t border-blue-400/40 z-20 rounded-b-3xl">
+      <form id="chat-form" class="max-w-4xl mx-auto relative flex items-center">
+        <input id="prompt" 
+               type="text" 
+               disabled
+               autocomplete="off"
+               placeholder="Neural Link Offline..." 
+               class="input-hover w-full bg-slate-950/90 border border-blue-400/50 focus:border-blue-300 rounded-3xl px-8 py-5 text-base md:text-lg focus:outline-none placeholder-blue-500/50 shadow-inner disabled:opacity-50 disabled:cursor-not-allowed text-blue-50 transition-all">
+        <button id="send-btn"
+                type="submit" 
+                disabled
+                class="btn-hover absolute right-3 top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 disabled:from-slate-700 disabled:to-slate-800 disabled:text-slate-400 disabled:shadow-none px-6 md:px-8 py-3.5 rounded-3xl font-bold tracking-wider text-sm flex items-center gap-3 shadow-[0_0_20px_rgba(96,165,250,0.4)] group transition-all">
+          TRANSMIT
+          <i class="fas fa-paper-plane group-hover:translate-x-1 transition-transform"></i>
+        </button>
+      </form>
+      <p class="text-[10px] text-center text-blue-400/60 uppercase tracking-[0.2em] font-semibold mt-4">
+        Local Edge Computing • 100% Private
+      </p>
+    </div>
+  </div>
+
+  <!-- Application Logic -->
+  <script type="module">
+    import { CreateMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
+
+    const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+    let engine = null;
+    let messages = [];
+    let isGenerating = false;
+    let audioContext;
+
+    // DOM Elements
+    const initBtn = document.getElementById('init-btn');
+    const statusText = document.getElementById('status-text');
+    const statusDot = document.getElementById('status-dot');
+    const progressContainer = document.getElementById('progress-container');
+    const progressText = document.getElementById('progress-text');
+    const progressBar = document.getElementById('progress-bar');
+    const chat = document.getElementById('chat');
+    const chatForm = document.getElementById('chat-form');
+    const promptInput = document.getElementById('prompt');
+    const sendBtn = document.getElementById('send-btn');
+
+    // === Audio System ===
+    function initAudio() {
+      if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioContext.state === 'suspended') audioContext.resume();
+    }
+
+    function playSendSound() {
+      initAudio();
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, audioContext.currentTime);
+      gain.gain.value = 0.1;
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start();
+      setTimeout(() => osc.stop(), 80);
+    }
+
+    function playThinkingSound() {
+      initAudio();
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(180, audioContext.currentTime);
+      gain.gain.value = 0.05;
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start();
+      setTimeout(() => osc.stop(), 600);
+    }
+
+    function playCompleteSound() {
+      initAudio();
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1200, audioContext.currentTime);
+      gain.gain.value = 0.08;
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start();
+      setTimeout(() => {
+        osc.frequency.setValueAtTime(800, audioContext.currentTime + 0.1);
+      }, 100);
+      setTimeout(() => osc.stop(), 300);
+    }
+
+    // === Background Animation ===
+    function createNeuralBackground() {
+      const canvas = document.getElementById("neural-bg");
+      const ctx = canvas.getContext("2d");
+      let width, height;
+
+      function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+      }
+      resize();
+      window.addEventListener('resize', resize);
+
+      let blobs = [];
+      for (let i = 0; i < 8; i++) {
+        blobs.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          size: Math.random() * 120 + 80,
+          speed: Math.random() * 0.3 + 0.1,
+          color: `hsla(${210 + Math.random() * 30}, 80%, 60%, 0.08)`,
+          phase: Math.random() * Math.PI * 2
+        });
+      }
+
+      let nodes = [];
+      for (let i = 0; i < 80; i++) {
+        nodes.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          baseRadius: Math.random() * 1.5 + 1,
+          vx: (Math.random() - 0.5) * 0.3,
+          vy: (Math.random() - 0.5) * 0.3,
+          pulsePhase: Math.random() * Math.PI * 2,
+          pulseSpeed: Math.random() * 0.02 + 0.01
+        });
+      }
+
+      function animate() {
+        ctx.fillStyle = "rgba(5, 5, 15, 0.2)";
+        ctx.fillRect(0, 0, width, height);
+
+        blobs.forEach(blob => {
+          blob.y -= blob.speed;
+          blob.phase += 0.01;
+          if (blob.y < -200) blob.y = height + 200;
+
+          ctx.save();
+          ctx.globalAlpha = 0.5;
+          ctx.shadowBlur = 80;
+          ctx.shadowColor = "#3b82f6";
+          ctx.beginPath();
+          const wobble = Math.sin(blob.phase) * 0.3;
+          ctx.ellipse(blob.x, blob.y, blob.size, blob.size * (0.6 + wobble), wobble, 0, Math.PI * 2);
+          ctx.fillStyle = blob.color;
+          ctx.fill();
+          ctx.restore();
+        });
+
+        nodes.forEach((node, i) => {
+          node.x += node.vx;
+          node.y += node.vy;
+          node.pulsePhase += node.pulseSpeed;
+
+          if (node.x < 0 || node.x > width) node.vx *= -1;
+          if (node.y < 0 || node.y > height) node.vy *= -1;
+
+          const currentRadius = node.baseRadius + Math.sin(node.pulsePhase) * 1.5;
+          const currentOpacity = 0.3 + Math.sin(node.pulsePhase) * 0.5;
+
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, Math.max(0.1, currentRadius), 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(96, 165, 250, ${currentOpacity})`;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = "#60a5fa";
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          for (let j = i + 1; j < nodes.length; j++) {
+            const dx = nodes[j].x - node.x;
+            const dy = nodes[j].y - node.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            if (dist < 130) {
+              ctx.beginPath();
+              ctx.strokeStyle = `rgba(96, 165, 250, ${0.12 * (1 - dist/130)})`;
+              ctx.lineWidth = 0.8;
+              ctx.moveTo(node.x, node.y);
+              ctx.lineTo(nodes[j].x, nodes[j].y);
+              ctx.stroke();
+            }
+          }
+        });
+        requestAnimationFrame(animate);
+      }
+      animate();
+    }
+    
+    createNeuralBackground();
+
+    // === WebLLM Logic ===
+    if (!navigator.gpu) {
+      chat.innerHTML = `
+        <div class="flex flex-col items-center justify-center h-full text-center">
+          <i class="fas fa-exclamation-triangle text-5xl text-red-400 mb-4 drop-shadow-[0_0_15px_rgba(248,113,113,0.5)]"></i>
+          <h2 class="text-2xl font-bold mb-2 text-white">Hardware Acceleration Unavailable</h2>
+          <p class="max-w-md text-blue-200 text-sm">Your browser does not support WebGPU, or a secure HTTPS connection is missing. This application requires WebGPU to interface with the local neural network.</p>
+        </div>`;
+      initBtn.disabled = true;
+      initBtn.innerText = "UNSUPPORTED BROWSER";
+      initBtn.classList.replace('hover:bg-blue-500/40', 'bg-red-500/20');
+      initBtn.classList.replace('text-blue-300', 'text-red-400');
+      initBtn.classList.replace('border-blue-400/30', 'border-red-400/30');
+    }
+
+    initBtn.addEventListener('click', async () => {
+      initAudio(); // Required to unlock audio context on first user gesture
+      initBtn.disabled = true;
+      initBtn.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> INITIALIZING...`;
+      progressContainer.classList.remove('hidden');
+      chat.innerHTML = ''; 
+
+      try {
+        engine = await CreateMLCEngine(MODEL_ID, {
+          initProgressCallback: (report) => {
+            progressText.innerText = report.text.toUpperCase();
+            const match = report.text.match(/\[(\d+)\/(\d+)\]/);
+            if (match) {
+              const pct = (parseInt(match[1]) / parseInt(match[2])) * 100;
+              progressBar.style.width = `${pct}%`;
+            } else if (report.text.includes('%')) {
+              const pMatch = report.text.match(/(\d+)%/);
+              if (pMatch) progressBar.style.width = `${pMatch[1]}%`;
+            }
+          }
+        });
+
+        // Ready State
+        progressContainer.classList.add('hidden');
+        initBtn.classList.add('hidden');
+        
+        statusText.innerText = 'ONLINE & SECURE';
+        statusText.classList.replace('text-amber-500', 'text-emerald-400');
+        statusDot.classList.replace('bg-amber-500', 'bg-emerald-400');
+        statusDot.classList.replace('animate-pulse', 'animate-ping');
+        
+        promptInput.disabled = false;
+        sendBtn.disabled = false;
+        promptInput.placeholder = "Interface with Neural Core Intelligence...";
+        promptInput.focus();
+
+      } catch (err) {
+        progressText.innerText = "INITIALIZATION FAILED: " + err.message.toUpperCase();
+        progressBar.classList.replace('bg-blue-400', 'bg-red-500');
+        initBtn.innerHTML = `FAILED`;
+        initBtn.classList.replace('text-blue-300', 'text-red-400');
+      }
+    });
+
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = promptInput.value.trim();
+      if (!text || isGenerating || !engine) return;
+
+      playSendSound();
+
+      // User Bubble
+      chat.innerHTML += `
+        <div class="flex justify-end">
+          <div class="max-w-[85%] md:max-w-[78%] chat-bubble-user px-6 py-4 text-base shadow-lg">${escapeHtml(text)}</div>
+        </div>`;
+      
+      messages.push({ role: 'user', content: text });
+      promptInput.value = '';
+      isGenerating = true;
+      sendBtn.disabled = true;
+      chat.scrollTop = chat.scrollHeight;
+
+      // Thinking Bubble
+      const thinkingId = 'think-' + Date.now();
+      chat.innerHTML += `
+        <div id="${thinkingId}" class="flex justify-start">
+          <div class="max-w-[85%] md:max-w-[78%] chat-bubble-ai px-6 py-4 flex items-center gap-4 shadow-lg">
+            <div class="thinking-dots">
+              <span></span><span></span><span></span>
+            </div>
+            <span class="text-blue-300 text-sm font-medium tracking-wide">Engaging neural pathways...</span>
+          </div>
+        </div>`;
+      chat.scrollTop = chat.scrollHeight;
+      
+      playThinkingSound();
+
+      try {
+        const completion = await engine.chat.completions.create({
+          messages: messages,
+          stream: true,
+        });
+
+        document.getElementById(thinkingId).remove();
+
+        const aiMsgId = 'msg-' + Date.now();
+        chat.innerHTML += `
+          <div class="flex justify-start">
+            <div id="${aiMsgId}" class="max-w-[85%] md:max-w-[78%] chat-bubble-ai px-6 py-4 text-base shadow-lg"></div>
+          </div>`;
+        
+        let fullResponse = "";
+        const msgDiv = document.getElementById(aiMsgId);
+
+        for await (const chunk of completion) {
+          const delta = chunk.choices[0]?.delta?.content || "";
+          fullResponse += delta;
+          msgDiv.textContent = fullResponse;
+          chat.scrollTop = chat.scrollHeight;
+        }
+
+        playCompleteSound();
+        messages.push({ role: 'assistant', content: fullResponse });
+
+      } catch (err) {
+        document.getElementById(thinkingId).remove();
+        chat.innerHTML += `
+          <div class="flex justify-start">
+            <div class="max-w-[85%] md:max-w-[78%] bg-red-900/80 border border-red-500/50 text-red-200 px-6 py-4 rounded-2xl shadow-lg">
+              <i class="fas fa-exclamation-circle mr-2"></i> Neural synchronization failed: ${err.message}
+            </div>
+          </div>`;
+      } finally {
+        isGenerating = false;
+        sendBtn.disabled = false;
+        promptInput.focus();
+        chat.scrollTop = chat.scrollHeight;
+      }
+    });
+
+    function escapeHtml(unsafe) {
+      return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  </script>
+</body>
+</html>

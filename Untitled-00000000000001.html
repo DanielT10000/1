@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local Llama Chat</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #020617;
+      color: #e2e8f0;
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .glass {
+      background-color: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 1.5rem;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+    .mesh-gradient-1 {
+      position: fixed; top: -10%; left: -10%; width: 500px; height: 500px;
+      background-color: rgba(79, 70, 229, 0.2); filter: blur(120px);
+      border-radius: 50%; z-index: -1;
+    }
+    .mesh-gradient-2 {
+      position: fixed; bottom: 0%; right: -10%; width: 600px; height: 600px;
+      background-color: rgba(8, 145, 178, 0.1); filter: blur(150px);
+      border-radius: 50%; z-index: -1;
+    }
+    /* Simple markdown spacing */
+    .message-content p { margin-bottom: 0.5rem; }
+    .message-content p:last-child { margin-bottom: 0; }
+  </style>
+</head>
+<body class="flex flex-col h-screen relative p-4 md:p-8 gap-4">
+
+  <div class="mesh-gradient-1"></div>
+  <div class="mesh-gradient-2"></div>
+
+  <div class="glass flex flex-col flex-1 overflow-hidden w-full max-w-4xl mx-auto relative z-10">
+    
+    <div class="px-6 py-4 bg-white/5 border-b border-white/10 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 font-bold">
+          LL
+        </div>
+        <div>
+          <h1 class="font-bold text-white tracking-tight">Llama 3.2 Local</h1>
+          <p id="status-text" class="text-[10px] text-amber-500 flex items-center gap-1 uppercase tracking-widest font-semibold">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" id="status-dot"></span>
+            Awaiting Initialization
+          </p>
+        </div>
+      </div>
+      <div>
+        <button id="init-btn" class="px-4 py-2 bg-indigo-500 hover:bg-indigo-400 text-white rounded-full text-xs font-bold uppercase tracking-wide transition-all shadow-lg cursor-pointer">
+          Initialize Model
+        </button>
+      </div>
+    </div>
+
+    <div id="progress-container" class="hidden px-6 py-3 bg-white/5 border-b border-white/5">
+      <div class="flex items-center justify-between mb-2">
+        <span id="progress-text" class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Loading...</span>
+      </div>
+      <div class="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+        <div id="progress-bar" class="h-full bg-cyan-400 w-0 transition-all duration-300"></div>
+      </div>
+    </div>
+
+    <div id="chat-history" class="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth">
+      <div class="h-full flex flex-col items-center justify-center text-center p-8 opacity-50">
+        <h3 class="text-xl font-bold text-white mb-2 tracking-tight">Private Local Chat</h3>
+        <p class="text-slate-400 max-w-sm text-sm">
+          Initialize Llama 3.2 to begin. No cloud servers are involved; your prompts stay private on your hardware via WebGPU.
+        </p>
+      </div>
+    </div>
+
+    <div class="p-6 bg-white/5 border-t border-white/10 backdrop-blur-sm">
+      <form id="chat-form" class="relative flex items-center">
+        <input
+          id="user-input"
+          type="text"
+          placeholder="Engine offline..."
+          disabled
+          autocomplete="off"
+          class="w-full bg-white/5 border border-white/10 focus:border-indigo-500/50 rounded-2xl px-6 py-4 pr-16 text-sm outline-none transition-all disabled:opacity-30 text-white placeholder:text-slate-500 shadow-inner"
+        />
+        <button
+          id="send-btn"
+          type="submit"
+          disabled
+          class="absolute right-3 p-2 px-4 bg-indigo-500 text-white rounded-xl hover:bg-indigo-400 disabled:opacity-30 disabled:hover:bg-indigo-500 transition-all font-bold text-sm cursor-pointer"
+        >
+          Send
+        </button>
+      </form>
+      <p class="text-[9px] text-center text-slate-600 uppercase tracking-[0.2em] font-bold mt-3">
+        Local Execution • Private & Secure
+      </p>
+    </div>
+  </div>
+
+  <script type="module">
+    // Import WebLLM directly from the browser ESM CDN
+    import { CreateMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
+
+    const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
+    let engine = null;
+    let messages = [];
+    let isGenerating = false;
+
+    // DOM Elements
+    const initBtn = document.getElementById('init-btn');
+    const statusText = document.getElementById('status-text');
+    const statusDot = document.getElementById('status-dot');
+    const progressContainer = document.getElementById('progress-container');
+    const progressText = document.getElementById('progress-text');
+    const progressBar = document.getElementById('progress-bar');
+    const chatHistory = document.getElementById('chat-history');
+    const chatForm = document.getElementById('chat-form');
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+
+    // 1. Check for WebGPU
+    if (!navigator.gpu) {
+      chatHistory.innerHTML = `
+        <div class="flex flex-col items-center justify-center h-full text-center text-red-400">
+          <h2 class="text-xl font-bold mb-2">WebGPU Not Supported</h2>
+          <p class="max-w-md text-sm">Your browser does not support WebGPU, or you are not using HTTPS. This app requires WebGPU to run local AI models.</p>
+        </div>`;
+      initBtn.disabled = true;
+      initBtn.classList.add('opacity-50');
+    }
+
+    // 2. Initialize Model
+    initBtn.addEventListener('click', async () => {
+      initBtn.disabled = true;
+      initBtn.innerText = "Initializing...";
+      progressContainer.classList.remove('hidden');
+      chatHistory.innerHTML = ''; // Clear welcome message
+
+      try {
+        engine = await CreateMLCEngine(MODEL_ID, {
+          initProgressCallback: (report) => {
+            progressText.innerText = report.text;
+            // Parse progress percentage
+            const match = report.text.match(/\[(\d+)\/(\d+)\]/);
+            if (match) {
+              const pct = (parseInt(match[1]) / parseInt(match[2])) * 100;
+              progressBar.style.width = `${pct}%`;
+            } else if (report.text.includes('%')) {
+              const pMatch = report.text.match(/(\d+)%/);
+              if (pMatch) progressBar.style.width = `${pMatch[1]}%`;
+            }
+          }
+        });
+
+        // Ready State
+        progressContainer.classList.add('hidden');
+        initBtn.classList.add('hidden');
+        statusText.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Engine Ready';
+        statusText.classList.replace('text-amber-500', 'text-emerald-400');
+        
+        userInput.disabled = false;
+        sendBtn.disabled = false;
+        userInput.placeholder = "Message Llama...";
+        userInput.focus();
+
+      } catch (err) {
+        progressText.innerText = "Error: " + err.message;
+        progressBar.classList.replace('bg-cyan-400', 'bg-red-500');
+      }
+    });
+
+    // 3. Handle Chat
+    chatForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = userInput.value.trim();
+      if (!text || isGenerating || !engine) return;
+
+      // Add User Message
+      appendMessage('user', text);
+      messages.push({ role: 'user', content: text });
+      
+      userInput.value = '';
+      isGenerating = true;
+      sendBtn.disabled = true;
+
+      // Add empty Assistant Message to stream into
+      const assistantMsgId = 'msg-' + Date.now();
+      appendMessage('assistant', '<span class="animate-pulse">Thinking...</span>', assistantMsgId);
+
+      try {
+        const completion = await engine.chat.completions.create({
+          messages: messages,
+          stream: true,
+        });
+
+        let fullResponse = "";
+        const msgDiv = document.getElementById(assistantMsgId);
+
+        for await (const chunk of completion) {
+          const delta = chunk.choices[0]?.delta?.content || "";
+          fullResponse += delta;
+          msgDiv.innerText = fullResponse;
+          chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        messages.push({ role: 'assistant', content: fullResponse });
+
+      } catch (err) {
+        document.getElementById(assistantMsgId).innerText = "Error generating response: " + err.message;
+      } finally {
+        isGenerating = false;
+        sendBtn.disabled = false;
+        userInput.focus();
+      }
+    });
+
+    // Helper: Append message to DOM
+    function appendMessage(role, content, id = '') {
+      const isUser = role === 'user';
+      const wrapper = document.createElement('div');
+      wrapper.className = `flex flex-col ${isUser ? 'items-end' : 'items-start'} gap-1 w-full`;
+      
+      wrapper.innerHTML = `
+        <div class="flex gap-3 max-w-[85%] ${isUser ? 'flex-row-reverse' : ''}">
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 shadow-lg text-xs font-bold ${isUser ? 'bg-indigo-600 text-white' : 'bg-white/10 border border-white/10 text-cyan-400'}">
+            ${isUser ? 'U' : 'LL'}
+          </div>
+          <div id="${id}" class="message-content px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm ${isUser ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white/10 border border-white/10 text-slate-200 rounded-tl-none'}">
+            ${content}
+          </div>
+        </div>
+      `;
+      chatHistory.appendChild(wrapper);
+      chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+  </script>
+</body>
+</html>

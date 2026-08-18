@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<title>God Jul!</title>
+<script src="https://unpkg.com/ua-parser-js@1.0.2/dist/ua-parser.min.js"></script>
+<style>
+    body, html {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: linear-gradient(to bottom, #0f0c29, #302b63, #24243e);
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        color: white;
+        position: relative;
+    }
+    #hilsen {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 9vw;
+        min-font-size: 4rem;
+        max-font-size: 12rem;
+        font-weight: 900;
+        color: #fff;
+        text-align: center;
+        text-shadow:
+            0 0 20px #ffcc00,
+            0 0 40px #ff6600,
+            0 0 60px #ff3366,
+            0 0 80px #cc33ff;
+        letter-spacing: 0.08em;
+        z-index: 12;
+        pointer-events: none;
+        animation: pulse 4s ease-in-out infinite, sparkle 6s linear infinite;
+        white-space: nowrap;
+        user-select: none;
+    }
+    #hilsen::after {
+        content: "!!!";
+        font-size: 1.3em;
+        vertical-align: super;
+        color: #ffcc00;
+        text-shadow: 0 0 25px #ffcc00;
+    }
+    @keyframes pulse {
+        0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.92; }
+        50%      { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+    }
+    @keyframes sparkle {
+        0%, 100% { filter: brightness(1) drop-shadow(0 0 20px #fff); }
+        25%      { filter: brightness(1.4) drop-shadow(0 0 40px #ffcc00); }
+        50%      { filter: brightness(1.2) drop-shadow(0 0 35px #ff3366); }
+        75%      { filter: brightness(1.5) drop-shadow(0 0 45px #cc33ff); }
+    }
+    #chrome-block {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.95);
+        z-index: 9999;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 30px;
+        backdrop-filter: blur(8px);
+    }
+    #chrome-block h1 { font-size: 3.5rem; margin: 0 0 1rem; color: #ff4444; }
+    #chrome-block p  { font-size: 1.6rem; max-width: 700px; line-height: 1.4; }
+    .lights-container { position: fixed; inset: 0; pointer-events: none; z-index: 15; overflow: hidden; }
+    .light-string { position: absolute; display: flex; gap: 18px; padding: 12px 0; }
+    .light { width: 12px; height: 12px; background: #fff; border-radius: 50%; box-shadow: 0 0 12px 4px currentColor; animation: twinkle 3s infinite; flex-shrink: 0; }
+    .light:nth-child(odd)  { animation-duration: 2.4s; animation-delay: 0.0s; }
+    .light:nth-child(even) { animation-duration: 3.1s; animation-delay: 0.7s; }
+    .light:nth-child(3n)   { animation-duration: 1.8s; animation-delay: 1.2s; }
+    .light:nth-child(4n)   { animation-duration: 4.2s; animation-delay: 0.4s; }
+    .light:nth-child(5n)   { animation-duration: 2.9s; animation-delay: 1.6s; }
+    .light:nth-child(6n+1) { color: #ff3366; }
+    .light:nth-child(6n+2) { color: #33ff99; }
+    .light:nth-child(6n+3) { color: #ffcc00; }
+    .light:nth-child(6n+4) { color: #3366ff; }
+    .light:nth-child(6n+5) { color: #ff6600; }
+    .light:nth-child(6n)   { color: #cc33ff; }
+    @keyframes twinkle { 0%,100% { opacity: 0.4; transform: scale(0.9); box-shadow: 0 0 8px 2px currentColor; } 50% { opacity: 1; transform: scale(1.3); box-shadow: 0 0 20px 10px currentColor; } }
+    #top  { top: 0; left: 0; right: 0; justify-content: center; flex-wrap: wrap; }
+    #left { top: 0; bottom: 0; left: 0; writing-mode: vertical-rl; transform: rotate(180deg); }
+    #right { top: 0; bottom: 0; right: 0; writing-mode: vertical-rl; }
+    .snow-container { position: fixed; inset: 0; pointer-events: none; z-index: 10; overflow: hidden; }
+    .snowflake { position: absolute; top: -10%; left: var(--left); width: var(--size); height: var(--size); opacity: var(--opacity); animation: fall calc(var(--duration) * 1s) linear infinite, drift 12s ease-in-out infinite alternate; transform: rotate(var(--rotate)); will-change: transform, opacity; }
+    .snowflake svg { width: 100%; height: 100%; filter: drop-shadow(0 0 4px rgba(255,255,255,0.9)); }
+    @keyframes fall { to { transform: translateY(120vh); } }
+    @keyframes drift { from { transform: translateX(-30px) rotate(var(--rotate)); } to { transform: translateX(40px) rotate(calc(var(--rotate) + 360deg)); } }
+    .ginger { position:fixed; top:-100px; pointer-events:none; z-index:8; animation:fall linear infinite; }
+    .ginger img { width:55px; height:auto; filter:drop-shadow(0 0 10px #ffcc00); }
+    .bouncing { position:fixed; z-index:7; width:130px; height:auto; }
+    .hint {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: rgba(255,255,255,0.7);
+        font-size: 1rem;
+        z-index: 20;
+        pointer-events: none;
+        text-shadow: 0 0 6px #000;
+    }
+    .info-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.8);
+        backdrop-filter: blur(10px);
+        z-index: 100;
+        overflow-y: auto;
+        padding: 30px;
+        display: none;
+        align-items: flex-start;
+        justify-content: center;
+    }
+    .info-container {
+        max-width: 1200px;
+        background: rgba(20,20,40,0.95);
+        padding: 30px;
+        border-radius: 14px;
+        box-shadow: 0 12px 50px rgba(0,0,0,0.8);
+        width: 100%;
+    }
+    .info-container h1 {
+        text-align: center;
+        color: #4CAF50;
+        margin: 0 0 30px;
+        font-size: 2.4rem;
+    }
+    .info-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .info-list li {
+        margin: 12px 0;
+        word-break: break-all;
+        font-size: 1.08rem;
+        line-height: 1.55;
+    }
+    .info-list span {
+        font-weight: bold;
+        color: #4dd0ff;
+        min-width: 280px;
+        display: inline-block;
+    }
+    .section-title {
+        margin: 40px 0 16px;
+        font-weight: bold;
+        font-size: 1.55rem;
+        color: #ffcc00;
+        border-bottom: 1px solid #666;
+        padding-bottom: 10px;
+    }
+    .close-btn {
+        position: fixed;
+        top: 30px;
+        right: 40px;
+        background: #ff3366;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 52px;
+        height: 52px;
+        font-size: 2rem;
+        cursor: pointer;
+        z-index: 110;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.7);
+    }
+</style>
+</head>
+<body>
+
+<!-- Chrome-blokkering -->
+<div id="chrome-block">
+    <h1>🚫 Google Chrome oppdaget</h1>
+    <p>Denne opplevelsen støttes dessverre ikke i Google Chrome av kompatibilitetsårsaker.<br><br>
+    Vennligst åpne denne siden i <strong>Microsoft Edge</strong>, <strong>Brave</strong>, <strong>Firefox</strong>, Opera eller en annen nettleser.</p>
+</div>
+
+<!-- Julelys -->
+<div class="lights-container">
+    <div class="light-string" id="top"></div>
+    <div class="light-string" id="left"></div>
+    <div class="light-string" id="right"></div>
+</div>
+
+<!-- Snøbeholder -->
+<div class="snow-container" id="snow"></div>
+
+<!-- Fin God Jul-hilsen -->
+<div id="hilsen">God Jul</div>
+
+<!-- Lyd -->
+<audio id="bgAudio" loop autoplay muted playsinline>
+    <source src="JingleBells.mp3" type="audio/mpeg">
+</audio>
+
+<!-- Hidden info panel -->
+<div class="info-overlay" id="infoOverlay">
+    <button class="close-btn" onclick="document.getElementById('infoOverlay').style.display='none'">×</button>
+    <div class="info-container">
+        <h1>Browser & Device Info</h1>
+        <ul class="info-list" id="infoList"></ul>
+    </div>
+</div>
+
+<div class="hint">Klikk hvor som helst for å aktivere lyd • Best opplevelse i Edge / Brave / Firefox</div>
+
+<script>
+// ────────────────────────────────────────────────
+//                Festive scripts (unchanged)
+// ────────────────────────────────────────────────
+
+// Chrome-deteksjon
+function isGoogleChromeOnly() {
+    const ua = navigator.userAgent;
+    return /Chrome/.test(ua) && !/Edg\//.test(ua) && !/OPR\//.test(ua) && !/Brave/.test(ua) && !/Vivaldi/.test(ua);
+}
+if (isGoogleChromeOnly()) {
+    document.getElementById('chrome-block').style.display = 'flex';
+}
+
+// Snøfnugg, lights, pepperkaker, bouncers, audio – all unchanged (omitted for brevity)
+
+// Double-ESC to show/hide panel
+let lastEscTime = 0;
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        const now = Date.now();
+        if (now - lastEscTime < 1000) {
+            const overlay = document.getElementById('infoOverlay');
+            overlay.style.display = (overlay.style.display === 'flex') ? 'none' : 'flex';
+            lastEscTime = 0;
+        } else {
+            lastEscTime = now;
+        }
+        e.preventDefault();
+    }
+});
+
+// ────────────────────────────────────────────────
+//          Advanced tracking & fingerprinting
+// ────────────────────────────────────────────────
+const trackingData = {
+    mousePath: [],
+    clicks: [],
+    scrolls: [],
+    keysPressed: new Set(),
+    idleTime: 0,
+    lastActivity: Date.now(),
+    startTime: Date.now()
+};
+
+// Track mouse / touch movement
+document.addEventListener('mousemove', e => {
+    if (trackingData.mousePath.length < 300) {
+        trackingData.mousePath.push({
+            x: e.clientX,
+            y: e.clientY,
+            t: Date.now() - trackingData.startTime
+        });
+    }
+    trackingData.lastActivity = Date.now();
+});
+
+document.addEventListener('touchmove', e => {
+    const touch = e.touches[0];
+    if (trackingData.mousePath.length < 300) {
+        trackingData.mousePath.push({
+            x: touch.clientX,
+            y: touch.clientY,
+            t: Date.now() - trackingData.startTime
+        });
+    }
+    trackingData.lastActivity = Date.now();
+}, { passive: true });
+
+// Clicks
+document.addEventListener('click', e => {
+    trackingData.clicks.push({
+        x: e.clientX,
+        y: e.clientY,
+        t: Date.now() - trackingData.startTime
+    });
+    trackingData.lastActivity = Date.now();
+});
+
+// Scroll
+let lastScrollY = window.scrollY;
+window.addEventListener('scroll', () => {
+    const dy = window.scrollY - lastScrollY;
+    trackingData.scrolls.push({
+        y: window.scrollY,
+        dy,
+        t: Date.now() - trackingData.startTime
+    });
+    lastScrollY = window.scrollY;
+    trackingData.lastActivity = Date.now();
+}, { passive: true });
+
+// Keyboard
+document.addEventListener('keydown', e => {
+    trackingData.keysPressed.add(e.key);
+    trackingData.lastActivity = Date.now();
+});
+
+// Idle detection
+setInterval(() => {
+    const idle = Date.now() - trackingData.lastActivity;
+    if (idle > trackingData.idleTime) trackingData.idleTime = idle;
+}, 1000);
+
+// ────────────────────────────────────────────────
+//          collectAllInfo – now with everything
+// ────────────────────────────────────────────────
+async function collectAllInfo() {
+    const infoList = document.getElementById('infoList');
+    function add(label, value) {
+        const li = document.createElement('li');
+        li.innerHTML = `<span>${label}:</span> ${value}`;
+        infoList.appendChild(li);
+    }
+    function addSection(title) {
+        const li = document.createElement('li');
+        li.className = 'section-title';
+        li.textContent = title;
+        infoList.appendChild(li);
+    }
+
+    // ── Previous sections (IP, UA, Hardware, Screen, Client Hints, WebGL, Audio, Fonts) ──
+    // (keep them as they were in the previous version – insert your existing code here)
+
+    // Battery Status
+    addSection("Battery Status");
+    if (navigator.getBattery) {
+        try {
+            const battery = await navigator.getBattery();
+            add("Level", (battery.level * 100).toFixed(1) + "%");
+            add("Charging", battery.charging ? "Yes" : "No");
+            add("Charging time remaining", battery.chargingTime === Infinity ? "N/A" : battery.chargingTime + " s");
+            add("Discharging time remaining", battery.dischargingTime === Infinity ? "N/A" : battery.dischargingTime + " s");
+        } catch (e) {
+            add("Battery API", "Error / Blocked");
+        }
+    } else {
+        add("Battery API", "Not supported");
+    }
+
+    // Mouse / Touch Movement
+    addSection("Mouse / Touch Behavior");
+    add("Mouse path length", trackingData.mousePath.length);
+    if (trackingData.mousePath.length > 0) {
+        const first = trackingData.mousePath[0];
+        const last = trackingData.mousePath[trackingData.mousePath.length - 1];
+        const duration = last.t - first.t;
+        add("Mouse movement duration", duration + " ms");
+        add("Average speed (px/ms)", (Math.hypot(last.x - first.x, last.y - first.y) / (duration || 1)).toFixed(3));
+    }
+    add("Clicks recorded", trackingData.clicks.length);
+    add("Scroll events", trackingData.scrolls.length);
+    add("Unique keys pressed", trackingData.keysPressed.size);
+
+    // Idle & Activity
+    addSection("Activity & Idle");
+    add("Time on page", Math.floor((Date.now() - trackingData.startTime) / 1000) + " s");
+    add("Longest idle period", Math.floor(trackingData.idleTime / 1000) + " s");
+
+    // Device Motion / Orientation (if available)
+    addSection("Device Motion / Orientation");
+    if (window.DeviceMotionEvent) {
+        let motionSample = null;
+        const listener = e => {
+            motionSample = e;
+            window.removeEventListener('devicemotion', listener);
+        };
+        window.addEventListener('devicemotion', listener, { once: true });
+        setTimeout(() => {
+            add("Motion available", motionSample ? "Yes" : "No sample yet");
+            if (motionSample) {
+                add("Acceleration x/y/z", `${motionSample.acceleration?.x?.toFixed(2) ?? '?'} / ${motionSample.acceleration?.y?.toFixed(2) ?? '?'} / ${motionSample.acceleration?.z?.toFixed(2) ?? '?'}`);
+            }
+        }, 1500);
+    } else {
+        add("DeviceMotionEvent", "Not supported");
+    }
+
+    // ... (add any other sections you had before)
+}
+
+window.onload = collectAllInfo;
+</script>
+</body>
+</html>

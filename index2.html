@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head> 
+<meta charset="UTF-8">
+<title>Min webbplats</title>
+</head>
+<body>
+Det här är min andra webbsida! Här kommer du till
+<a href="index.html">Startsidan</a>
+Här kommer du till <a href="https://www.tyreso.se/tyreso-gymnasium.html" target="_blank">Tyresö gymnasiums hemsida</a>
+
+Här kommer du till <a href="https://www.aftonbladet.se" target="_blank">Aftonbladet</a>
+</body>
+</html>
+
+Det här är mitt spel
+<a href="index42.html">Spel</a>
+
+<a href="index44.html"><img src="monke.jpg" width="300" height="220" border="0" /></a>
+Klicka på bilden för att se min nyare spel version
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Device Info</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- UAParser library for vendor/model etc -->
+  <script src="https://unpkg.com/ua-parser-js@1.0.2/dist/ua-parser.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; color: #333; padding: 20px; }
+    .container { max-width: 1000px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    h1 { text-align: center; color: #4CAF50; margin-bottom: 30px; }
+    .info-list { list-style: none; padding: 0; }
+    .info-list li { margin: 6px 0; word-break: break-word; }
+    .info-list span { font-weight: bold; }
+    .section-title { margin-top: 30px; font-weight: bold; font-size: 1.2em; color: #007ACC; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <ul class="info-list" id="infoList"></ul>
+  </div>
+  <script>
+    async function collectAllInfo() {
+      const infoList = document.getElementById('infoList');
+      function add(label, value) {
+        const li = document.createElement('li');
+        li.innerHTML = `<span>${label}:</span> ${value}`;
+        infoList.appendChild(li);
+      }
+
+      // Helper for formatting seconds to minutes + seconds
+      function formatTime(seconds) {
+        if (seconds === Infinity || seconds === -1) return "Unknown";
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      }
+
+      // Group title helper
+      function addSection(title) {
+        const li = document.createElement('li');
+        li.className = 'section-title';
+        li.textContent = title;
+        infoList.appendChild(li);
+      }
+
+      // === IP / Location ===
+      addSection("IP / Location");
+      try {
+        const res = await fetch('https://ipapi.co/json/');
+        const data = await res.json();
+        add("IP Address", data.ip || "Unknown");
+        add("ISP / Org", data.org || data.company || "Unknown");
+        add("Country", data.country_name || "Unknown");
+        add("Region", data.region || "Unknown");
+        add("City", data.city || "Unknown");
+        add("Postal Code", data.postal || "Unknown");
+        add("Latitude", data.latitude || "Unknown");
+        add("Longitude", data.longitude || "Unknown");
+        add("Timezone (from IP)", data.timezone || "Unknown");
+      } catch(e) {
+        add("IP / Location", "Unavailable");
+      }
+
+      // === User Agent / Browser ===
+      addSection("User Agent / Browser");
+      const uaParser = new UAParser();
+      const uaResult = uaParser.getResult();
+      add("Device Vendor (UA)", uaResult.device.vendor || "Unknown");
+      add("Device Model (UA)", uaResult.device.model || "Unknown");
+      add("Device Type (UA)", uaResult.device.type || "Unknown");
+      add("OS Name", uaResult.os.name || "Unknown");
+      add("OS Version", uaResult.os.version || "Unknown");
+      add("Browser Name", uaResult.browser.name || "Unknown");
+      add("Browser Version", uaResult.browser.version || "Unknown");
+      add("Navigator Vendor", navigator.vendor || "Unknown");
+      add("Navigator Product", navigator.product || "Unknown");
+      add("UA String", navigator.userAgent);
+
+      // === Hardware Info ===
+      addSection("Hardware");
+      add("Logical CPU Cores", navigator.hardwareConcurrency || "Unknown");
+      add("Approx RAM (GB)", navigator.deviceMemory || "Unknown");
+
+      // === Screen / Display ===
+      addSection("Screen / Display");
+      add("Screen Resolution", `${screen.width} x ${screen.height}`);
+      add("Available Screen Size", `${screen.availWidth || "Unknown"} x ${screen.availHeight || "Unknown"}`);
+      add("Color Depth", screen.colorDepth || "Unknown");
+      add("Pixel Depth", screen.pixelDepth || "Unknown");
+      add("Device Pixel Ratio", window.devicePixelRatio || "Unknown");
+      add("Max Touch Points", navigator.maxTouchPoints || "0");
+      add("Touch Event Supported", ('ontouchstart' in window) ? "Yes" : "No");
+
+      // === WebGL / GPU ===
+      addSection("WebGL / GPU");
+      let webglVendor = "Unavailable", webglRenderer = "Unavailable";
+      try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (gl) {
+          const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+          if (dbg) {
+            webglVendor = gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL);
+            webglRenderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+          }
+        }
+      } catch(e) {}
+      add("WebGL Supported", (typeof document.createElement('canvas').getContext === 'function') ? "Yes" : "No");
+      add("WebGL Vendor", webglVendor);
+      add("WebGL Renderer", webglRenderer);
+
+      // WebGPU if available
+      if (navigator.gpu) {
+        try {
+          const adapter = await navigator.gpu.requestAdapter();
+          if (adapter) {
+            add("WebGPU Adapter Name", adapter.name || "Unknown");
+            add("WebGPU Max Texture 2D Dimension", adapter.limits?.maxTextureDimension2D || "Unknown");
+            add("WebGPU Supported Features", adapter.features ? Array.from(adapter.features).join(', ') : "None");
+          }
+        } catch(e) {
+          add("WebGPU Info", "Permission or unsupported");
+        }
+      } else {
+        add("WebGPU Support", "No");
+      }
+
+      // === Battery Info ===
+      addSection("Battery Info");
+      if (navigator.getBattery) {
+        try {
+          const bat = await navigator.getBattery();
+          add("Battery Level", `${Math.round(bat.level * 100)}%`);
+          add("Charging", bat.charging ? "Yes" : "No");
+          add("Charging Time", formatTime(bat.chargingTime));
+          add("Discharging Time", formatTime(bat.dischargingTime));
+        } catch(e) {
+          add("Battery Info", "Unavailable");
+        }
+      } else {
+        add("Battery API Support", "No");
+      }
+
+      // === Browser Plugins ===
+      addSection("Browser Plugins");
+      try {
+        const plugins = navigator.plugins;
+        if (plugins && plugins.length > 0) {
+          const names = [];
+          for (let i = 0; i < plugins.length; i++) {
+            names.push(plugins[i].name);
+          }
+          add("Installed Browser Plugins (navigator.plugins)", plugins.length);
+          add("Plugin Names", names.join(', '));
+        } else {
+          add("Installed Browser Plugins", "None or hidden");
+        }
+      } catch(e) {
+        add("Installed Browser Plugins", "Not accessible");
+      }
+
+      // === Camera / Microphone Permissions & Details ===
+      addSection("Camera / Microphone");
+      try {
+        const camPerm = await navigator.permissions.query({ name: 'camera' });
+        const micPerm = await navigator.permissions.query({ name: 'microphone' });
+        add("Camera Permission State", camPerm.state);
+        add("Microphone Permission State", micPerm.state);
+      } catch(e) {
+        add("Camera / Mic Permissions", "Unknown");
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const videoTrack = stream.getVideoTracks()[0];
+        const audioTrack = stream.getAudioTracks()[0];
+        if (videoTrack) {
+          const vs = videoTrack.getSettings();
+          add("Camera Resolution (video)", `${vs.width || "Unknown"}x${vs.height || "Unknown"}`);
+          add("Camera Frame Rate", vs.frameRate || "Unknown");
+          add("Camera Facing Mode", vs.facingMode || "Unknown");
+        }
+        if (audioTrack) {
+          const as = audioTrack.getSettings();
+          add("Audio Sample Rate", as.sampleRate || "Unknown");
+          add("Audio Channel Count", as.channelCount || "Unknown");
+        }
+        videoTrack && videoTrack.stop();
+        audioTrack && audioTrack.stop();
+      } catch(e) {
+        add("Camera / Microphone Details", "User denied or not supported");
+      }
+
+      // === Audio Output Devices ===
+      addSection("Audio Devices");
+      try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const outputs = devs.filter(d => d.kind === 'audiooutput');
+        add("Number of Audio Output Devices", outputs.length);
+        const outLabels = outputs.map(d => d.label || "Unnamed");
+        add("Audio Output Device Labels", outLabels.join(' | ') || "None");
+      } catch(e) {
+        add("Audio Output Devices", "Denied or not supported");
+      }
+
+      // === Network Info ===
+      addSection("Network Info");
+      if (navigator.connection) {
+        const conn = navigator.connection;
+        add("Network Effective Type", conn.effectiveType || "Unknown");
+        add("Network Downlink (Mbps)", conn.downlink || "Unknown");
+        add("Network RTT (ms)", conn.rtt || "Unknown");
+        add("Save-Data Enabled", conn.saveData ? "Yes" : "No");
+        add("Network Downlink Max (Mbps)", conn.downlinkMax || "Unknown");
+      } else {
+        add("Network Info", "Not supported");
+      }
+
+      // === Storage Estimate ===
+      addSection("Storage");
+      try {
+        if (navigator.storage && navigator.storage.estimate) {
+          const est = await navigator.storage.estimate();
+          add("Storage Quota (bytes)", est.quota || "Unknown");
+          add("Storage Used (bytes)", est.usage || "Unknown");
+        }
+      } catch(e) {
+        add("Storage Estimate", "Unavailable");
+      }
+
+      // === Sensors Presence ===
+      addSection("Sensors / Events");
+      add("Device Motion Event Supported", 'DeviceMotionEvent' in window ? "Yes" : "No");
+      add("Device Orientation Event Supported", 'DeviceOrientationEvent' in window ? "Yes" : "No");
+      add("Proximity Sensor Supported", 'ondeviceproximity' in window ? "Yes" : "No");
+      add("Ambient Light Sensor Supported", 'ondevicelight' in window ? "Yes" : "No");
+
+      // === Time / Locale ===
+      addSection("Time / Locale");
+      add("Language", navigator.language || "Unknown");
+      add("Languages", navigator.languages ? navigator.languages.join(', ') : "Unknown");
+      add("Locale", Intl.DateTimeFormat().resolvedOptions().locale || "Unknown");
+      add("Time Zone", Intl.DateTimeFormat().resolvedOptions().timeZone || "Unknown");
+      add("Timezone Offset (minutes)", new Date().getTimezoneOffset());
+      add("Date / Time Now", new Date().toString());
+      add("Dark Mode Preferred", window.matchMedia('(prefers-color-scheme: dark)').matches ? "Yes" : "No");
+
+      // === Audio / Video Codec Support ===
+      addSection("Audio / Video Codec Support");
+      function testCodec(type) {
+        const video = document.createElement('video');
+        const audio = document.createElement('audio');
+        return {
+          mp3: audio.canPlayType('audio/mpeg'),
+          wav: audio.canPlayType('audio/wav; codecs="1"'),
+          aac: audio.canPlayType('audio/aac'),
+          ogg: audio.canPlayType('audio/ogg; codecs="vorbis"'),
+          h264: video.canPlayType('video/mp4; codecs="avc1.42E01E"'),
+          webm: video.canPlayType('video/webm; codecs="vp8, vorbis"'),
+          vp9: video.canPlayType('video/webm; codecs="vp9"'),
+          av1: video.canPlayType('video/mp4; codecs="av01.0.05M.08"'),
+        }
+      }
+      const codecs = testCodec();
+      for (const [codec, support] of Object.entries(codecs)) {
+        add(codec.toUpperCase() + " Support", support || "No");
+      }
+
+      // === Simple FPS Benchmark ===
+      addSection("Performance Test");
+      try {
+        const frames = 60;
+        let count = 0;
+        const start = performance.now();
+        await new Promise(resolve => {
+          function loop() {
+            count++;
+            if (count >= frames) {
+              resolve();
+            } else {
+              requestAnimationFrame(loop);
+            }
+          }
+          requestAnimationFrame(loop);
+        });
+        const end = performance.now();
+        const approxFps = (frames / (end - start)) * 1000;
+        add("Estimated FPS (render‑loop test)", approxFps.toFixed(1));
+      } catch(e) {
+        add("FPS test", "Failed");
+      }
+    }
+
+    window.onload = collectAllInfo;
+  </script>
+</body>
+</html>

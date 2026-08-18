@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lava Lamp Simulation</title>
+<style>
+  body {
+    margin: 0;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #0a0a0a;
+    overflow: hidden;
+  }
+
+  canvas {
+    display: block;
+    background: linear-gradient(to top, #220022, #440044, #880088);
+    border-radius: 50px;
+  }
+</style>
+</head>
+<body>
+<canvas id="lavaLamp"></canvas>
+
+<script>
+const canvas = document.getElementById('lavaLamp');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth * 0.5;
+canvas.height = window.innerHeight * 0.8;
+
+class Blob {
+  constructor(x, y, radius, color, speed) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.color = color;
+    this.speed = speed;
+    this.direction = 1; // 1 = up, -1 = down
+  }
+
+  update() {
+    // Move blob
+    this.y -= this.speed * this.direction;
+
+    // Bounce off edges
+    if (this.y - this.radius <= 0) this.direction = -1;
+    if (this.y + this.radius >= canvas.height) this.direction = 1;
+  }
+
+  draw() {
+    ctx.beginPath();
+    ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 20;
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Create blobs
+const blobs = [];
+for (let i = 0; i < 10; i++) {
+  const radius = Math.random() * 40 + 30;
+  const x = Math.random() * (canvas.width - radius * 2) + radius;
+  const y = Math.random() * (canvas.height - radius * 2) + radius;
+  const color = `hsl(${Math.random() * 360}, 70%, 50%)`;
+  const speed = Math.random() * 0.5 + 0.2;
+  blobs.push(new Blob(x, y, radius, color, speed));
+}
+
+function animate() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw blobs
+  blobs.forEach(blob => {
+    blob.update();
+    blob.draw();
+  });
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+
+// Handle window resize
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth * 0.5;
+  canvas.height = window.innerHeight * 0.8;
+});
+</script>
+</body>
+</html>

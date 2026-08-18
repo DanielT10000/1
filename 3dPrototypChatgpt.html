@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Retro Raycaster Maze</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { margin:0; overflow:hidden; background:#000; font-family:Courier New; image-rendering:pixelated; }
+canvas { image-rendering:pixelated; display:block; }
+#ui {
+  position:absolute; top:10px; left:10px;
+  color:#ff4444; background:#000;
+  padding:8px 12px; font-size:14px;
+  border:2px solid #880000;
+  z-index:20;
+}
+#minimap { position:absolute; top:10px; right:10px; border:2px solid #880000; z-index:20; }
+#crosshair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#ffffff88; font-size:24px; }
+</style>
+</head>
+<body>
+
+<div id="ui">
+HP: <span id="hp">100</span> |
+Kills: <span id="kills">0</span> |
+Depth: <span id="score">0</span>
+</div>
+
+<canvas id="minimap" width="200" height="200"></canvas>
+<div id="crosshair">+</div>
+<canvas id="screen"></canvas>
+
+<script>
+const screen = document.getElementById('screen');
+const ctx = screen.getContext('2d', {alpha:false});
+const mini = document.getElementById('minimap');
+const mctx = mini.getContext('2d');
+
+let w = screen.width = innerWidth;
+let h = screen.height = innerHeight;
+addEventListener('resize', () => { w = screen.width = innerWidth; h = screen.height = innerHeight; });
+
+const TEX_SIZE = 64;
+const MAP_W = 720;
+const MAP_H = 720;
+const MAP = Array(MAP_H).fill().map(() => Array(MAP_W).fill(0));
+
+let seed = Math.random()*999999|0;
+function rnd(){ seed=(seed*16807)%2147483647; return seed/2147483647; }
+
+// =======================================================
+// MAP GENERATION
+// =======================================================
+function generateMap(){
+  for(let x=0;x<MAP_W;x++) MAP[0][x]=MAP[MAP_H-1][x]=1;
+  for(let y=0;y<MAP_H;y++) MAP[y][0]=MAP[y][MAP_W-1]=1;
+
+  for(let y=1;y<MAP_H-1;y++)
+    for(let x=1;x<MAP_W-1;x++)
+      if(rnd()<0.11) MAP[y][x]=1+(rnd()*3|0);
+
+  // Clear spawn
+  for(let y=0;y<25;y++)
+    for(let x=0;x<35;x++)
+      MAP[y][x]=0;
+
+  // Add checkpoints (type 5)
+  for(let i=0;i<25;i++){
+    let x,y;
+    do{
+      x=50+rnd()*(MAP_W-100)|0;
+      y=50+rnd()*(MAP_H-100)|0;
+    }while(MAP[y][x]!==0);
+    MAP[y][x]=5;
+  }
+}
+generateMap();
+
+// =======================================================
+// TEXTURES (Retro DOOM style)
+// =======================================================
+const textures = Array(16).fill().map(()=>new Uint32Array(TEX_SIZE*TEX_SIZE));
+const floorTex = new Uint32Array(TEX_SIZE*TEX_SIZE);
+const ceilTex  = new Uint32Array(TEX_SIZE*TEX_SIZE);
+
+function generateTextures(){
+  // Brick walls
+  for(let y=0;y<TEX_SIZE;y++){
+    for(let x=0;x<TEX_SIZE;x++){
+      let brick = ((y>>4)&1) ^ ((x>>5)&1);
+      let r = brick?140:110;
+      let g = 20;
+      let b = 20;
+      textures[0][y*TEX_SIZE+x]=0xff000000|(r<<16)|(g<<8)|b;
+    }
+  }
+
+  // Gray stone
+  for(let i=0;i<TEX_SIZE*TEX_SIZE;i++){
+    let shade=100+(rnd()*40|0);
+    textures[1][i]=0xff000000|(shade<<16)|(shade<<8)|shade;
+  }
+
+  // Blue tech wall
+  for(let i=0;i<TEX_SIZE*TEX_SIZE;i++){
+    let r=30,g=60,b=150+(rnd()*40|0);
+    textures[2][i]=0xff000000|(r<<16)|(g<<8)|b;
+  }
+
+  // Green slime
+  for(let i=0;i<TEX_SIZE*TEX_SIZE;i++){
+    let r=20,g=140+(rnd()*60|0),b=20;
+    textures[3][i]=0xff000000|(r<<16)|(g<<8)|b;
+  }
+
+  // Checkpoint texture (gold pillar)
+  for(let i=0;i<TEX_SIZE*TEX_SIZE;i++){
+    textures[4][i]=0xff000000|(200<<16)|(160<<8)|0;
+  }
+
+  for(let i=0;i<TEX_SIZE*TEX_SIZE;i++){
+    floorTex[i]=0xff000000|(60<<16)|(60<<8)|60;
+    ceilTex[i]=0xff000000|(20<<16)|(20<<8)|40;
+  }
+}
+generateTextures();
+
+// =======================================================
+// GAME STATE
+// =======================================================
+const player={
+  x:22.5,y:12.5,
+  dirX:-1,dirY:0,
+  planeX:0,planeY:0.66,
+  health:100
+};
+
+let spawnPoint={x:22.5,y:12.5};
+let score=0;
+let maxDepth=player.y;
+let kills=0;
+
+let keys={}, mouseLocked=false;
+const enemies=[];
+
+function respawn(){
+  player.x=spawnPoint.x;
+  player.y=spawnPoint.y;
+  player.health=100;
+  document.getElementById("hp").textContent=100;
+}
+
+// =======================================================
+// INPUT
+// =======================================================
+addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+screen.addEventListener('click',()=>screen.requestPointerLock());
+addEventListener('pointerlockchange',()=>mouseLocked=document.pointerLockElement===screen);
+addEventListener('mousemove',e=>{
+  if(!mouseLocked)return;
+  const rot=-e.movementX*0.002;
+  const c=Math.cos(rot),s=Math.sin(rot);
+  const od=player.dirX;
+  player.dirX=od*c-player.dirY*s;
+  player.dirY=od*s+player.dirY*c;
+  const op=player.planeX;
+  player.planeX=op*c-player.planeY*s;
+  player.planeY=op*s+player.planeX*c;
+});
+
+// =======================================================
+// UPDATE
+// =======================================================
+function safeMove(obj,dx,dy){
+  let nx=obj.x+dx, ny=obj.y+dy;
+  if(MAP[ny|0][nx|0]===0 || MAP[ny|0][nx|0]===5){
+    obj.x=nx; obj.y=ny;
+  }
+}
+
+function update(dt){
+  const spd=dt*4.5;
+  let dx=0,dy=0;
+  if(keys['w']){dx+=player.dirX*spd; dy+=player.dirY*spd;}
+  if(keys['s']){dx-=player.dirX*spd; dy-=player.dirY*spd;}
+  if(keys['a']){dx-=player.dirY*spd; dy+=player.dirX*spd;}
+  if(keys['d']){dx+=player.dirY*spd; dy-=player.dirX*spd;}
+  safeMove(player,dx,dy);
+
+  // Checkpoint detection
+  if(MAP[player.y|0][player.x|0]===5){
+    spawnPoint.x=player.x;
+    spawnPoint.y=player.y;
+  }
+
+  // Depth score (how far down maze)
+  if(player.y>maxDepth){
+    maxDepth=player.y;
+    score=(maxDepth-12)|0;
+    document.getElementById("score").textContent=score;
+  }
+
+  // Death check
+  if(player.health<=0){
+    respawn();
+  }
+}
+
+// =======================================================
+// RENDER (simplified wall-only raycaster)
+// =======================================================
+function render(){
+  ctx.fillStyle="#000";
+  ctx.fillRect(0,0,w,h);
+
+  for(let x=0;x<w;x++){
+    let camX=2*x/w-1;
+    let rayX=player.dirX+player.planeX*camX;
+    let rayY=player.dirY+player.planeY*camX;
+    let mapX=player.x|0,mapY=player.y|0;
+    let deltaX=Math.abs(1/rayX),deltaY=Math.abs(1/rayY);
+    let stepX,stepY,sideDistX,sideDistY;
+
+    if(rayX<0){stepX=-1; sideDistX=(player.x-mapX)*deltaX;}
+    else{stepX=1; sideDistX=(mapX+1-player.x)*deltaX;}
+    if(rayY<0){stepY=-1; sideDistY=(player.y-mapY)*deltaY;}
+    else{stepY=1; sideDistY=(mapY+1-player.y)*deltaY;}
+
+    let hit=0,side;
+    while(!hit){
+      if(sideDistX<sideDistY){sideDistX+=deltaX; mapX+=stepX; side=0;}
+      else{sideDistY+=deltaY; mapY+=stepY; side=1;}
+      if(MAP[mapY][mapX]>0) hit=1;
+    }
+
+    let perpDist=(side===0?sideDistX-deltaX:sideDistY-deltaY);
+    let lineH=(h/perpDist)|0;
+    let drawStart=-lineH/2+h/2;
+    let tex=MAP[mapY][mapX]-1;
+    if(tex<0) tex=0;
+
+    ctx.drawImage(textureToCanvas(textures[tex]),0,0,TEX_SIZE,TEX_SIZE,
+      x,drawStart,1,lineH);
+  }
+}
+
+function textureToCanvas(tex){
+  const c=document.createElement("canvas");
+  c.width=TEX_SIZE; c.height=TEX_SIZE;
+  const ictx=c.getContext("2d");
+  const img=ictx.createImageData(TEX_SIZE,TEX_SIZE);
+  new Uint32Array(img.data.buffer).set(tex);
+  ictx.putImageData(img,0,0);
+  return c;
+}
+
+// =======================================================
+let last=performance.now();
+function loop(t){
+  const dt=Math.min(0.033,(t-last)/1000);
+  last=t;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

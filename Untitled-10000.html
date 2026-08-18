@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tiny CPU AI - Fixed Version</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 30px; max-width: 800px; margin: auto; background: #f8f8f8; }
+    button { padding: 15px 30px; font-size: 18px; }
+    #status { font-size: 18px; margin: 20px 0; min-height: 30px; }
+    #output { background: white; padding: 15px; border-radius: 8px; white-space: pre-wrap; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Tiny CPU-Only AI Test (distilgpt2)</h1>
+  <p>~120 MB model • Pure CPU • No WebGPU</p>
+  
+  <button onclick="testAI()">Test AI Generation</button>
+  <p id="status">Click the button above...</p>
+  <div id="output"></div>
+
+  <script type="module">
+    import { pipeline } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
+
+    let generator = null;
+
+    async function testAI() {
+      const status = document.getElementById("status");
+      const output = document.getElementById("output");
+      output.textContent = "";
+      status.textContent = "Loading tiny model on CPU... (first time: 15-40 seconds)";
+
+      try {
+        if (!generator) {
+          generator = await pipeline('text-generation', 'Xenova/distilgpt2', {
+            device: 'wasm',
+            dtype: 'q8',
+            progress_callback: (p) => {
+              if (p.status === 'progress') {
+                status.textContent = `Downloading: ${Math.round(p.progress)}%`;
+              }
+            }
+          });
+        }
+
+        status.textContent = "Generating text...";
+
+        const result = await generator("Hello, my name is", {
+          max_new_tokens: 80,
+          temperature: 0.7,
+          do_sample: true
+        });
+
+        output.textContent = result[0].generated_text;
+        status.textContent = "✅ It worked! Model is running on CPU.";
+
+      } catch (err) {
+        console.error(err);
+        status.textContent = "❌ Error occurred. Check the red messages in F12 Console and paste them here.";
+        output.textContent = err.message || String(err);
+      }
+    }
+  </script>
+</body>
+</html>

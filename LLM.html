@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neural Core Intelligence</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+  <style>
+    body { 
+      font-family: 'Segoe UI', system_ui, sans-serif; 
+      background: #05050f;
+      overflow: hidden;
+    }
+
+    #neural-bg {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: -1;
+      opacity: 0.9;
+    }
+
+    /* Base Chat Bubble Styles */
+    .chat-bubble-user {
+      background: linear-gradient(135deg, #60a5fa, #3b82f6);
+      color: white;
+      border-radius: 24px 24px 8px 24px;
+      box-shadow: 0 0 35px rgba(96, 165, 250, 0.5);
+    }
+    .chat-bubble-ai {
+      background: rgba(15, 23, 42, 0.92);
+      color: #e0f2fe;
+      border: 1px solid rgba(147, 197, 253, 0.3);
+      border-radius: 24px 24px 24px 8px;
+      box-shadow: 0 0 30px rgba(96, 165, 250, 0.2);
+    }
+
+    /* Glass Effect */
+    .glass {
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(147, 197, 253, 0.2);
+    }
+
+    .header-glow {
+      box-shadow: 0 0 40px rgba(96, 165, 250, 0.4);
+    }
+
+    .typing {
+      overflow: hidden;
+      white-space: pre-wrap;
+      border-right: 3px solid #93c5fd;
+    }
+
+    /* Fancy Thinking Animation */
+    .thinking-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .thinking-dots {
+      display: flex;
+      gap: 6px;
+    }
+    .thinking-dots span {
+      width: 8px;
+      height: 8px;
+      background: #60a5fa;
+      border-radius: 50%;
+      animation: neuralPulse 1.2s infinite ease-in-out;
+    }
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes neuralPulse {
+      0%, 100% { transform: scale(0.4); opacity: 0.5; }
+      50% { transform: scale(1.4); opacity: 1; }
+    }
+
+    /* === FANCY HOVER ANIMATIONS === */
+    
+    /* Brain Icon Hover */
+    .brain-hover {
+      transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .brain-hover:hover {
+      transform: scale(1.15) rotate(-15deg);
+      box-shadow: 0 0 60px rgba(167, 139, 250, 0.9);
+    }
+
+    /* Glass Panels Hover */
+    .glass-hover {
+      transition: all 0.3s ease;
+    }
+    .glass-hover:hover {
+      background: rgba(22, 33, 56, 0.8);
+      border-color: rgba(147, 197, 253, 0.4);
+    }
+
+    /* Chat Bubbles Hover */
+    .chat-bubble-user, .chat-bubble-ai {
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      transform-origin: bottom right;
+    }
+    .chat-bubble-ai { transform-origin: bottom left; }
+    
+    .chat-bubble-user:hover {
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 0 15px 45px rgba(96, 165, 250, 0.7);
+    }
+    .chat-bubble-ai:hover {
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 0 15px 40px rgba(96, 165, 250, 0.35);
+      border-color: rgba(147, 197, 253, 0.6);
+    }
+
+    /* Interactive Inputs & Selectors Hover */
+    .input-hover {
+      transition: all 0.3s ease;
+    }
+    .input-hover:hover {
+      border-color: rgba(147, 197, 253, 0.8);
+      box-shadow: 0 0 25px rgba(96, 165, 250, 0.3);
+      transform: translateY(-1px);
+    }
+    
+    #prompt:focus {
+      box-shadow: 0 0 40px rgba(96, 165, 250, 0.7);
+      border-color: #93c5fd;
+      transform: translateY(-2px);
+    }
+
+    /* Buttons Hover */
+    .btn-hover {
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .btn-hover:hover {
+      transform: scale(1.05) translateY(-2px);
+      box-shadow: 0 10px 30px rgba(96, 165, 250, 0.6);
+    }
+    .btn-hover:active {
+      transform: scale(0.95);
+    }
+  </style>
+</head>
+<body class="h-full text-white flex flex-col">
+  <canvas id="neural-bg" class="fixed inset-0"></canvas>
+
+  <div class="max-w-4xl mx-auto w-full h-full flex flex-col relative z-10">
+    <div class="glass glass-hover border-b border-blue-400/40 p-6 flex items-center gap-6 header-glow z-20">
+      <div class="brain-hover w-16 h-16 bg-gradient-to-br from-blue-400 via-indigo-400 to-violet-500 rounded-3xl flex items-center justify-center text-4xl shadow-2xl shadow-blue-500/60 relative cursor-pointer">
+        <span class="absolute inset-0 bg-blue-400/30 rounded-3xl animate-ping"></span>
+        🧠
+      </div>
+      <div class="cursor-default">
+        <h1 class="text-4xl font-light tracking-[-2px] transition hover:text-blue-200">Neural Core Intelligence</h1>
+        <p class="text-blue-300 text-sm tracking-widest font-medium">LOCAL NEURAL INTERFACE</p>
+      </div>
+      <div class="ml-auto flex items-center gap-4">
+        <span class="px-6 py-2.5 bg-emerald-500/10 text-emerald-400 text-xs font-medium rounded-3xl border border-emerald-400/30 flex items-center gap-2 hover:bg-emerald-500/20 hover:shadow-[0_0_15px_rgba(52,211,153,0.4)] transition-all cursor-default">
+          <span class="relative flex h-3 w-3">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
+          </span>
+          ONLINE
+        </span>
+      </div>
+    </div>
+
+    <div class="glass glass-hover border-b border-blue-400/30 p-5 flex items-center gap-4 z-10">
+      <span class="font-medium text-blue-200 tracking-wider">ACTIVE ARCHITECTURE</span>
+      <select id="modelSelect" onchange="switchModel()" 
+              class="input-hover bg-slate-950/80 border border-blue-400/50 text-white rounded-3xl px-6 py-4 flex-1 focus:outline-none focus:border-blue-300 text-base cursor-pointer">
+      </select>
+      <button onclick="loadModels()" class="btn-hover px-6 py-4 bg-slate-950/80 hover:bg-slate-900 border border-blue-400/50 rounded-3xl hover:border-blue-300 group">
+        <i class="fas fa-sync-alt text-blue-400 group-hover:rotate-180 transition-transform duration-500"></i>
+      </button>
+    </div>
+
+    <div id="chat" class="flex-1 overflow-y-auto p-8 space-y-10 scroll-smooth"></div>
+
+    <div class="glass glass-hover p-6 border-t border-blue-400/30 z-20">
+      <div class="max-w-4xl mx-auto relative">
+        <input id="prompt" 
+               type="text" 
+               placeholder="Interface with Neural Core Intelligence..." 
+               class="input-hover w-full bg-slate-950/90 border border-blue-400/60 focus:border-blue-300 rounded-3xl px-8 py-6 text-lg focus:outline-none placeholder-blue-400/70 shadow-inner">
+        <button onclick="sendMessage()" 
+                class="btn-hover absolute right-4 top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 px-9 py-4 rounded-3xl font-semibold flex items-center gap-3 shadow-2xl shadow-blue-500/50 group">
+          TRANSMIT
+          <i class="fas fa-arrow-up group-hover:-translate-y-1 transition-transform"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "http://192.168.68.120:1234/v1";
+    let currentModel = "";
+    let audioContext;
+
+    function initAudio() {
+      if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    function playSendSound() {
+      initAudio();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+      gain.gain.value = 0.15;
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start();
+      setTimeout(() => oscillator.stop(), 80);
+    }
+
+    function playThinkingSound() {
+      initAudio();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(180, audioContext.currentTime);
+      gain.gain.value = 0.08;
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start();
+      setTimeout(() => oscillator.stop(), 600);
+    }
+
+    function playCompleteSound() {
+      initAudio();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(1200, audioContext.currentTime);
+      gain.gain.value = 0.12;
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start();
+      setTimeout(() => {
+        oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.1);
+      }, 100);
+      setTimeout(() => oscillator.stop(), 300);
+    }
+
+    // Combined Background Animation (Lava Lamp + Neural Dots)
+    function createNeuralBackground() {
+      const canvas = document.getElementById("neural-bg");
+      const ctx = canvas.getContext("2d");
+      let width, height;
+
+      function resize() {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+      }
+      resize();
+      window.addEventListener('resize', resize);
+
+      // Layer 1: Lava Lamp Blobs
+      let blobs = [];
+      for (let i = 0; i < 10; i++) {
+        blobs.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          size: Math.random() * 100 + 70,
+          speed: Math.random() * 0.4 + 0.2,
+          color: `hsla(${200 + Math.random() * 40}, 80%, 65%, 0.12)`,
+          phase: Math.random() * Math.PI * 2
+        });
+      }
+
+      // Layer 2: Pulsing Dots
+      let nodes = [];
+      for (let i = 0; i < 100; i++) {
+        nodes.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          baseRadius: Math.random() * 1.5 + 1,
+          vx: (Math.random() - 0.5) * 0.35,
+          vy: (Math.random() - 0.5) * 0.35,
+          pulsePhase: Math.random() * Math.PI * 2,
+          pulseSpeed: Math.random() * 0.03 + 0.01
+        });
+      }
+
+      function animate() {
+        // Trail effect
+        ctx.fillStyle = "rgba(5, 5, 15, 0.15)";
+        ctx.fillRect(0, 0, width, height);
+
+        // Render Lava Lamp Blobs First (Background)
+        blobs.forEach(blob => {
+          blob.y -= blob.speed;
+          blob.phase += 0.01;
+          if (blob.y < -150) blob.y = height + 150;
+
+          ctx.save();
+          ctx.globalAlpha = 0.4;
+          ctx.shadowBlur = 90;
+          ctx.shadowColor = "#3b82f6";
+          ctx.beginPath();
+          // Slight wobble effect on the ellipse
+          const wobble = Math.sin(blob.phase) * 0.3;
+          ctx.ellipse(blob.x, blob.y, blob.size, blob.size * (0.6 + wobble), wobble, 0, Math.PI * 2);
+          ctx.fillStyle = blob.color;
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Render Neural Dots Second (Foreground)
+        nodes.forEach((node, i) => {
+          node.x += node.vx;
+          node.y += node.vy;
+          node.pulsePhase += node.pulseSpeed;
+
+          if (node.x < 0 || node.x > width) node.vx *= -1;
+          if (node.y < 0 || node.y > height) node.vy *= -1;
+
+          const currentRadius = node.baseRadius + Math.sin(node.pulsePhase) * 1.5;
+          const currentOpacity = 0.4 + Math.sin(node.pulsePhase) * 0.6;
+
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, Math.max(0.1, currentRadius), 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(96, 165, 250, ${currentOpacity})`;
+          ctx.shadowBlur = 12;
+          ctx.shadowColor = "#60a5fa";
+          ctx.fill();
+          ctx.shadowBlur = 0; // Reset for lines
+
+          for (let j = i + 1; j < nodes.length; j++) {
+            const dx = nodes[j].x - node.x;
+            const dy = nodes[j].y - node.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            if (dist < 140) {
+              ctx.beginPath();
+              ctx.strokeStyle = `rgba(96, 165, 250, ${0.16 * (1 - dist/140)})`;
+              ctx.lineWidth = 0.8;
+              ctx.moveTo(node.x, node.y);
+              ctx.lineTo(nodes[j].x, nodes[j].y);
+              ctx.stroke();
+            }
+          }
+        });
+
+        requestAnimationFrame(animate);
+      }
+      animate();
+    }
+
+    async function loadModels() {
+      const select = document.getElementById("modelSelect");
+      select.innerHTML = "<option>Connecting to neural lattice...</option>";
+      try {
+        const res = await fetch(`${API_BASE}/models`);
+        const data = await res.json();
+        select.innerHTML = "";
+        data.data.forEach(model => {
+          const option = document.createElement("option");
+          option.value = model.id;
+          option.textContent = model.id;
+          select.appendChild(option);
+        });
+        if (data.data.length > 0) currentModel = data.data[0].id;
+      } catch (err) {
+        select.innerHTML = "<option>Neural link unstable</option>";
+      }
+    }
+
+    async function switchModel() {
+      const newModel = document.getElementById("modelSelect").value;
+      if (!newModel || newModel === currentModel) return;
+
+      const loadingDiv = document.getElementById("loadingStatus");
+      const loadingText = document.getElementById("loadingText");
+      const progressText = document.getElementById("progressText");
+
+      if(loadingDiv) {
+        loadingDiv.classList.remove("hidden");
+        loadingText.textContent = `Synapsing with ${newModel}...`;
+        progressText.textContent = "0%";
+      }
+      
+      currentModel = newModel;
+
+      let progress = 0;
+      const interval = setInterval(() => {
+        progress += Math.random() * 22;
+        if (progress > 95) progress = 95;
+        if(progressText) progressText.textContent = Math.floor(progress) + "%";
+      }, 120);
+
+      setTimeout(() => {
+        clearInterval(interval);
+        if(progressText) progressText.textContent = "100%";
+        if(loadingDiv) setTimeout(() => loadingDiv.classList.add("hidden"), 700);
+      }, 1500);
+    }
+
+    function typeResponse(element, text) {
+      element.textContent = "";
+      element.classList.add("typing");
+
+      let i = 0;
+      const delay = 2;
+
+      const interval = setInterval(() => {
+        if (i < text.length) {
+          element.textContent += text[i];
+          i++;
+          document.getElementById("chat").scrollTop = document.getElementById("chat").scrollHeight;
+        } else {
+          clearInterval(interval);
+          element.classList.remove("typing");
+          playCompleteSound();
+        }
+      }, delay);
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById("prompt");
+      const chat = document.getElementById("chat");
+      const userText = input.value.trim();
+      if (!userText) return;
+
+      playSendSound();
+
+      chat.innerHTML += `
+        <div class="flex justify-end">
+          <div class="max-w-[78%] chat-bubble-user px-7 py-4 text-lg cursor-default">${userText}</div>
+        </div>`;
+      chat.scrollTop = chat.scrollHeight;
+      input.value = "";
+
+      const aiDiv = document.createElement("div");
+      aiDiv.className = "flex justify-start";
+      aiDiv.innerHTML = `
+        <div class="max-w-[78%] chat-bubble-ai px-7 py-4 flex items-center gap-3 cursor-default">
+          <div class="thinking-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <span>Engaging neural pathways...</span>
+        </div>`;
+      chat.appendChild(aiDiv);
+      chat.scrollTop = chat.scrollHeight;
+
+      playThinkingSound();
+
+      try {
+        const response = await fetch(`${API_BASE}/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: currentModel || document.getElementById("modelSelect").value,
+            messages: [{ role: "user", content: userText }],
+            stream: true
+          })
+        });
+
+        aiDiv.remove();
+
+        const newAiDiv = document.createElement("div");
+        newAiDiv.className = "flex justify-start";
+        newAiDiv.innerHTML = `<div class="max-w-[78%] chat-bubble-ai px-7 py-4 typing cursor-default" id="ai-response"></div>`;
+        chat.appendChild(newAiDiv);
+        const responseDiv = document.getElementById("ai-response");
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ") && line !== "data: [DONE]") {
+              try {
+                const parsed = JSON.parse(line.slice(6));
+                const content = parsed.choices[0]?.delta?.content || "";
+                fullText += content;
+              } catch(e) {}
+            }
+          }
+        }
+
+        typeResponse(responseDiv, fullText);
+
+      } catch (err) {
+        aiDiv.innerHTML = `<div class="max-w-[78%] bg-red-500/70 px-7 py-4 rounded-3xl cursor-default">Neural synchronization failed</div>`;
+      }
+    }
+
+    window.onload = () => {
+      loadModels();
+      createNeuralBackground();
+      document.getElementById("prompt").addEventListener("keypress", e => {
+        if (e.key === "Enter") sendMessage();
+      });
+    };
+  </script>
+</body>
+</html>

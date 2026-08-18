@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Retro Raycaster: Deep Maze</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { margin:0; overflow:hidden; background:#000; font-family:'Courier New', Courier, monospace; image-rendering:pixelated; }
+  canvas { image-rendering:pixelated; image-rendering:crisp-edges; display:block; }
+  #ui { position:absolute; top:10px; left:10px; color:#f00; background:rgba(0,0,0,0.8); padding:10px; border:2px solid #555; font-size:16px; pointer-events:none; z-index:20; text-transform: uppercase; }
+  #hp-bar { display:inline-block; width:100px; height:10px; border:1px solid #f00; margin-right:10px;}
+  #hp-fill { background:#f00; height:100%; transition: width 0.2s; }
+  #minimap { position:absolute; top:10px; right:10px; border:2px solid #555; image-rendering:pixelated; z-index:20; opacity: 0.8; }
+  #crosshair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:24px; color:#0f0; pointer-events:none; z-index:10; }
+  #msg { position:absolute; bottom:20%; width:100%; text-align:center; color:#fff; font-size:24px; text-shadow:2px 2px #000; display:none; }
+</style>
+</head>
+<body>
+<div id="ui">
+    HEALTH: <div id="hp-bar"><div id="hp-fill" style="width:100%"></div></div>
+    DEPTH: <span id="depth">0</span>m | KILLS: <span id="kills">0</span>
+</div>
+<div id="msg">CHECKPOINT REACHED</div>
+<canvas id="minimap" width="160" height="160"></canvas>
+<div id="crosshair">·</div>
+<canvas id="screen"></canvas>
+
+<script>
+const screen = document.getElementById('screen');
+const ctx = screen.getContext('2d', {alpha:false});
+const mini = document.getElementById('minimap');
+const mctx = mini.getContext('2d');
+
+let w = screen.width = innerWidth;
+let h = screen.height = innerHeight;
+addEventListener('resize', () => { w = screen.width = innerWidth; h = screen.height = innerHeight; });
+
+const TEX_SIZE = 64;
+const MAP_W = 720;
+const MAP_H = 720;
+const MAP = Array(MAP_H).fill().map(() => Array(MAP_W).fill(0));
+
+let seed = Math.random() * 0x7fffffff | 0;
+function rnd() {
+  seed = (seed * 16807) % 2147483647;
+  return seed / 2147483647;
+}
+
+// --- Map Generation with Checkpoints ---
+function generateMap() {
+  for (let x = 0; x < MAP_W; x++) MAP[0][x] = MAP[MAP_H-1][x] = 1;
+  for (let y = 0; y < MAP_H; y++) MAP[y][0] = MAP[y][MAP_W-1] = 1;
+
+  for (let y = 2; y < MAP_H-2; y++) {
+    for (let x = 2; x < MAP_W-2; x++) {
+      if (rnd() < 0.12) MAP[y][x] = (rnd() * 4 | 0) + 1;
+    }
+  }
+
+  // Clear spawn
+  for(let y=10; y<15; y++) for(let x=20; x<25; x++) MAP[y][x] = 0;
+
+  // Add Checkpoints (Type 5) every 60 units of depth
+  for (let cy = 60; cy < MAP_H - 20; cy += 60) {
+      let cx = 10 + (rnd() * (MAP_W-20) | 0);
+      // Ensure it's in an open spot
+      MAP[cy][cx] = 0; MAP[cy+1][cx] = 0; MAP[cy-1][cx] = 0;
+      MAP[cy][cx+1] = 0; MAP[cy][cx-1] = 0;
+      MAP[cy][cx] = 5; 
+  }
+}
+generateMap();
+
+// --- Retro Texture Generation (Wolf3D/Doom Style) ---
+const textures = Array(16).fill().map(() => new Uint32Array(TEX_SIZE * TEX_SIZE));
+const floorTex = new Uint32Array(TEX_SIZE * TEX_SIZE);
+const ceilTex  = new Uint32Array(TEX_SIZE * TEX_SIZE);
+
+function generateTextures() {
+  const setPix = (tex, x, y, r, g, b) => tex[y * TEX_SIZE + x] = 0xff000000 | (r << 16) | (g << 8) | b;
+
+  for (let x = 0; x < TEX_SIZE; x++) {
+    for (let y = 0; y < TEX_SIZE; y++) {
+      // Wall 1: Wolf3D Grey Stone
+      let c = (x === 0 || y === 0 || x === 63 || y === 31) ? 60 : 100 + (rnd() * 20);
+      setPix(textures[0], x, y, c, c, c);
+
+      // Wall 2: Doom-style Red/Brown Brick
+      let isBrickEdge = (y % 16 === 0 || (y % 16 < 16 && x % 32 === 0));
+      let br = isBrickEdge ? 40 : 80 + (rnd() * 30);
+      setPix(textures[1], x, y, br, br*0.4, br*0.3);
+
+      // Wall 3: Blue Tech/Metal
+      let isBolt = (x%32<4 && y%32<4);
+      let bc = isBolt ? 180 : 40 + (x%2)*10;
+      setPix(textures[2], x, y, bc*0.5, bc*0.6, bc);
+
+      // Wall 4: Mossy Wood
+      let wc = 60 + (rnd()*20);
+      if (rnd() < 0.1) { setPix(textures[3], x, y, 20, 80, 20); }
+      else { setPix(textures[3], x, y, wc, wc*0.7, wc*0.4); }
+
+      // Wall 5: CHECKPOINT (Glowing Blue Column)
+      let pulse = (x < 4 || x > 60 || y < 4 || y > 60) ? 200 : 50;
+      setPix(textures[4], x, y, 0, pulse*0.8, pulse);
+
+      // Floor (Dark tiles)
+      let fc = (x%32<2 || y%32<2) ? 20 : 40;
+      floorTex[y*TEX_SIZE+x] = 0xff000000 | (fc<<16) | (fc<<8) | fc;
+      
+      // Ceiling (Rusty metal)
+      let cc = 30 + (rnd()*10);
+      ceilTex[y*TEX_SIZE+x] = 0xff000000 | (cc+20<<16) | (cc+10<<8) | cc;
+    }
+  }
+  // Enemy Textures (Same logic as before but higher contrast)
+  for(let i=8; i<12; i++) {
+    for(let x=0; x<64; x++) for(let y=0; y<64; y++) {
+        if (Math.hypot(x-32, y-32) < 25) setPix(textures[i], x, y, 200, 20, 20);
+    }
+  }
+}
+generateTextures();
+
+// --- Game State ---
+const player = { 
+    x:22.5, y:12.5, dirX:-1, dirY:0, planeX:0, planeY:0.66, 
+    health:100, maxHealth: 100, 
+    checkX: 22.5, checkY: 12.5,
+    maxDepth: 0
+};
+let keys = {}, mouseLocked = false, kills = 0, flash = 0;
+const enemies = [], projectiles = [];
+
+function spawnEnemies() {
+  enemies.length = 0;
+  for (let i = 0; i < 300; i++) {
+    let x = rnd()*MAP_W, y = rnd()*MAP_H;
+    if (MAP[y|0][x|0] === 0 && Math.hypot(x-player.x, y-player.y) > 15) {
+      enemies.push({ x, y, tex: 8 + (rnd()*4|0), alive: true });
+    }
+  }
+}
+spawnEnemies();
+
+// --- Core Logic ---
+function respawn() {
+    player.x = player.checkX;
+    player.y = player.checkY;
+    player.health = 100;
+    const msg = document.getElementById('msg');
+    msg.textContent = "RESPAWNED AT CHECKPOINT";
+    msg.style.display = 'block';
+    setTimeout(() => msg.style.display = 'none', 2000);
+}
+
+function update(dt) {
+  if (player.health <= 0) return respawn();
+
+  const spd = dt * (keys['shift']?8:5);
+  let dx=0, dy=0;
+  if (keys['w']) {dx += player.dirX*spd; dy += player.dirY*spd;}
+  if (keys['s']) {dx -= player.dirX*spd; dy -= player.dirY*spd;}
+  if (keys['a']) {dx -= player.dirY*spd; dy += player.dirX*spd;}
+  if (keys['d']) {dx += player.dirY*spd; dy -= player.dirX*spd;}
+  
+  const oldX = player.x, oldY = player.y;
+  safeMove(player, dx, dy);
+
+  // Depth Score (Distance from starting Y)
+  const currentDepth = Math.max(0, Math.floor(player.y - 12.5));
+  if (currentDepth > player.maxDepth) {
+      player.maxDepth = currentDepth;
+      document.getElementById('depth').textContent = player.maxDepth;
+  }
+
+  // Checkpoint Trigger
+  const tx = player.x|0, ty = player.y|0;
+  if (MAP[ty][tx] === 5) {
+      if (player.checkX !== tx + 0.5 || player.checkY !== ty + 0.5) {
+          player.checkX = tx + 0.5;
+          player.checkY = ty + 0.5;
+          const msg = document.getElementById('msg');
+          msg.textContent = "CHECKPOINT REACHED";
+          msg.style.display = 'block';
+          setTimeout(() => msg.style.display = 'none', 2000);
+      }
+  }
+
+  // Enemy AI & Combat
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const dist = Math.hypot(player.x - e.x, player.y - e.y);
+    if (dist < 0.7) {
+      player.health -= 40 * dt;
+      document.getElementById('hp-fill').style.width = player.health + "%";
+    }
+    if (dist < 20) {
+        const es = dt * 2;
+        safeMove(e, ((player.x-e.x)/dist)*es, ((player.y-e.y)/dist)*es);
+    }
+  }
+
+  for (let i=projectiles.length-1; i>=0; i--) {
+    const p = projectiles[i];
+    p.x += p.dx * 30 * dt; p.y += p.dy * 30 * dt; p.life -= dt;
+    if (p.life <= 0 || MAP[p.y|0][p.x|0] > 0 && MAP[p.y|0][p.x|0] !== 5) projectiles.splice(i,1);
+  }
+  if (flash > 0) flash -= dt;
+}
+
+function safeMove(obj, dx, dy) {
+  if (MAP[obj.y|0][(obj.x + dx)|0] === 0 || MAP[obj.y|0][(obj.x + dx)|0] === 5) obj.x += dx;
+  if (MAP[(obj.y + dy)|0][obj.x|0] === 0 || MAP[(obj.y + dy)|0][obj.x|0] === 5) obj.y += dy;
+}
+
+// --- Render Logic (Optimized Raycaster) ---
+function render() {
+  const img = ctx.createImageData(w,h);
+  const buf = new Uint32Array(img.data.buffer);
+  const zbuf = new Float32Array(w);
+
+  for (let x=0; x<w; x++) {
+    const camX = 2*x/w - 1;
+    const rayX = player.dirX + player.planeX*camX;
+    const rayY = player.dirY + player.planeY*camX;
+    let mapX = player.x|0, mapY = player.y|0;
+    const deltaX = Math.abs(1/rayX), deltaY = Math.abs(1/rayY);
+    let stepX = rayX<0?-1:1, stepY = rayY<0?-1:1;
+    let sideDistX = rayX<0 ? (player.x-mapX)*deltaX : (mapX+1-player.x)*deltaX;
+    let sideDistY = rayY<0 ? (player.y-mapY)*deltaY : (mapY+1-player.y)*deltaY;
+    let hit=0, side=0;
+
+    while (hit === 0) {
+      if (sideDistX < sideDistY) { sideDistX += deltaX; mapX += stepX; side=0; }
+      else { sideDistY += deltaY; mapY += stepY; side=1; }
+      if (MAP[mapY][mapX] > 0) hit = MAP[mapY][mapX];
+    }
+
+    let perpDist = (side===0) ? (sideDistX-deltaX) : (sideDistY-deltaY);
+    zbuf[x] = perpDist;
+    const lineH = (h / perpDist)|0;
+    let drawStart = Math.max(0, (h/2 - lineH/2)|0);
+    let drawEnd = Math.min(h-1, (h/2 + lineH/2)|0);
+
+    const texNum = hit - 1;
+    let wallX = side===0 ? player.y + perpDist*rayY : player.x + perpDist*rayX;
+    let texX = ((wallX - Math.floor(wallX)) * TEX_SIZE)|0;
+    const step = TEX_SIZE / lineH;
+    let texPos = (drawStart - h/2 + lineH/2) * step;
+
+    for (let y=drawStart; y<drawEnd; y++) {
+      const texY = (texPos|0) & (TEX_SIZE-1);
+      texPos += step;
+      let col = textures[texNum][texY*TEX_SIZE + texX];
+      if (side===1) col = (col >> 1) & 0x7f7f7f;
+      buf[y*w + x] = col;
+    }
+    // Floor & Ceiling
+    for(let y=drawEnd; y<h; y++) {
+        let p = y - h/2, rd = h/(2*p);
+        let fx = player.x + rd*rayX, fy = player.y + rd*rayY;
+        let tx = (fx*TEX_SIZE)&63, ty = (fy*TEX_SIZE)&63;
+        buf[y*w+x] = floorTex[ty*64+tx];
+        buf[(h-y)*w+x] = ceilTex[ty*64+tx];
+    }
+  }
+
+  // Draw Enemies & Projectiles
+  const sprites = [];
+  enemies.forEach(e => { if(e.alive) sprites.push({x:e.x, y:e.y, tex:e.tex, d:Math.hypot(e.x-player.x, e.y-player.y)})});
+  projectiles.forEach(p => sprites.push({x:p.x, y:p.y, tex:12, d:Math.hypot(p.x-player.x, p.y-player.y)}));
+  sprites.sort((a,b)=>b.d - a.d);
+
+  for(let s of sprites) {
+    if (s.d < 0.2) continue;
+    let sx = s.x - player.x, sy = s.y - player.y;
+    let inv = 1.0 / (player.planeX * player.dirY - player.dirX * player.planeY);
+    let tx = inv * (player.dirY * sx - player.dirX * sy);
+    let ty = inv * (-player.planeY * sx + player.planeX * sy);
+    if (ty <= 0) continue;
+    let scrX = ((w/2) * (1 + tx/ty))|0;
+    let sSize = Math.abs(h/ty)|0;
+    for(let x = Math.max(0, scrX-sSize/2|0); x < Math.min(w, scrX+sSize/2|0); x++) {
+        if (ty < zbuf[x]) {
+            let tX = ((x - (scrX - sSize/2)) * TEX_SIZE / sSize)|0;
+            for(let y = Math.max(0, h/2-sSize/2|0); y < Math.min(h, h/2+sSize/2|0); y++) {
+                let tY = ((y - (h/2 - sSize/2)) * TEX_SIZE / sSize)|0;
+                let col = textures[s.tex][tY*64+tX];
+                if(col !== 0) buf[y*w+x] = col;
+            }
+        }
+    }
+  }
+
+  ctx.putImageData(img,0,0);
+  drawMinimap();
+}
+
+function drawMinimap() {
+  mctx.fillStyle='#000'; mctx.fillRect(0,0,160,160);
+  const zoom = 4;
+  for(let y=-10; y<10; y++) {
+      for(let x=-10; x<10; x++) {
+          let mx = (player.x+x)|0, my = (player.y+y)|0;
+          if(mx<0||my<0||mx>=MAP_W||my>=MAP_H) continue;
+          let t = MAP[my][mx];
+          if(t > 0) {
+              mctx.fillStyle = t === 5 ? '#0af' : '#666';
+              mctx.fillRect(80+x*zoom, 80+y*zoom, zoom, zoom);
+          }
+      }
+  }
+  mctx.fillStyle='#0f0'; mctx.fillRect(78,78,4,4);
+}
+
+// --- Input Handling ---
+addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
+addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
+screen.addEventListener('click', ()=>screen.requestPointerLock());
+addEventListener('mousemove', e=>{
+  if (document.pointerLockElement !== screen) return;
+  const rot = -e.movementX * 0.002;
+  const c=Math.cos(rot), s=Math.sin(rot);
+  const ox=player.dirX, op=player.planeX;
+  player.dirX = ox*c - player.dirY*s; player.dirY = ox*s + player.dirY*c;
+  player.planeX = op*c - player.planeY*s; player.planeY = op*s + player.planeY*c;
+});
+screen.addEventListener('mousedown', () => {
+    if (document.pointerLockElement !== screen) return;
+    flash = 0.1;
+    projectiles.push({x:player.x, y:player.y, dx:player.dirX, dy:player.dirY, life:2});
+    for(let e of enemies) {
+        if(!e.alive) continue;
+        let dx=e.x-player.x, dy=e.y-player.y, dist=Math.hypot(dx,dy);
+        let angle = Math.abs(Math.atan2(dy,dx) - Math.atan2(player.dirY, player.dirX));
+        if (angle < 0.2 && dist < 15) { e.alive = false; kills++; document.getElementById('kills').textContent = kills; }
+    }
+});
+
+let last = performance.now();
+function loop(t) {
+  const dt = Math.min(0.1, (t-last)/1000);
+  last = t;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Lava Lamp Simulation</title>
+<style>
+body {
+  background-color: #121212; /* Dark background */
+  overflow: hidden; /* Hide scrollbars */
+}
+
+#container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  overflow: hidden; /* Clip the content */
+}
+
+#lamp {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background-color: #222; /* Darker background for lamp itself */
+}
+
+.lava {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  animation: lavaFlow 10s linear infinite;
+  background-color: #FF0000; /* Red Lava Color */
+}
+
+/* Different sizes and positions for the lava blobs */
+.lava:nth-child(1) {
+  left: 20%;
+  top: 30%;
+  animation-delay: 0s;
+}
+
+.lava:nth-child(2) {
+  right: 10%;
+  bottom: 20%;
+  animation-delay: 1s;
+}
+
+.lava:nth-child(3) {
+    left: 60%;
+    top: 70%;
+    animation-delay: 3s;
+}
+
+/* Animation Keyframes */
+@keyframes lavaFlow {
+  0% {
+    transform: translate(0, 0);
+    opacity: 1;
+  }
+  50% {
+    opacity: 1; /* fully visible in the middle */
+  }
+  100% {
+    transform: translate(0, -200px) ; /*move back up*/
+    opacity: 0; /* fade out at the end of the cycle*/
+  }
+}
+</style>
+</head>
+<body>
+
+<div id="container">
+  <div id="lamp">
+    <div class="lava"></div>
+    <div class="lava"></div>
+    <div class="lava"></div>
+    <div class="lava"></div>
+     <div class="lava"></div>
+  </div>
+</div>
+
+</body>
+</html>

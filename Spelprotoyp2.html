@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ASCII Shooter</title>
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      color: white;
+      font-family: monospace;
+      overflow: hidden;
+      user-select: none;
+      cursor: none;
+    }
+    #game {
+      white-space: pre;
+      font-size: 2px; /* original small font size */
+      line-height: 1;
+      padding: 1px;
+      width: 3000vw;
+      height: 200vh;
+      overflow: hidden;
+      display: block;
+    }
+    #instructions {
+      position: fixed;
+      top: 50px;
+      left: 50px;
+      color: white;
+      font-family: monospace;
+      user-select: none;
+      z-index: 100;
+    }
+    .red {
+      color: red;
+    }
+    .green {
+      color: #00FF00;
+    }
+    .yellow {
+      color: yellow;
+    }
+    .grey {
+      color: #AAAAAA;
+    }
+  </style>
+</head>
+<body>
+  <div id="instructions">Click to play. Mouse: look, WASD: move, Space: shoot</div>
+  <pre id="game"></pre>
+
+<script>
+  const screenWidth = 900, screenHeight = 300; // Lower resolution for original font size to fit screen
+  const mapWidth = 64, mapHeight = 67;
+  const FOV = Math.PI / 3;
+  const maxDepth = 108;
+
+  let playerX = 8, playerY = 8, playerAngle = 0;
+  let keys = {};
+  let projectiles = [];
+  let enemies = [];
+  let health = 150;
+  const maxHealth = 150;
+
+  const gameEl = document.getElementById('game');
+
+  const map = new Array(mapWidth * mapHeight).fill(' ');
+  for (let y = 0; y < mapHeight; y++) {
+    for (let x = 0; x < mapWidth; x++) {
+      if (x === 0 || y === 0 || x === mapWidth - 1 || y === mapHeight - 1 || Math.random() < 0.07) {
+        map[y * mapWidth + x] = '#';
+      }
+    }
+  }
+
+  function getMap(x, y) {
+    if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) return '#';
+    return map[Math.floor(y) * mapWidth + Math.floor(x)];
+  }
+
+  function shoot() {
+    projectiles.push({ x: playerX, y: playerY, angle: playerAngle, distance: 0 });
+  }
+
+  
+  const enemyShape = [
+    "   EEE   ",
+    "  EEEEE  ",
+    " E  E  E ",
+    " E E E E ",
+    " E  E  E ",
+    " E E E E ",
+    " E  E  E ",
+    "  E   E  ",
+    "   E E   ",
+  ];
+
+  function spawnEnemies(n) {
+    for (let i = 0; i < n; i++) {
+      let ex = 0, ey = 0;
+      do {
+        ex = Math.floor(Math.random() * mapWidth);
+        ey = Math.floor(Math.random() * mapHeight);
+      } while (getMap(ex, ey) !== ' ' || Math.hypot(ex - playerX, ey - playerY) < 6);
+      enemies.push({ x: ex, y: ey, lastAttackTime: 0, health: 30, dying: false, explosionFrame: 0, dead: false });
+    }
+  }
+
+  function collidesWithEnemy(x, y) {
+    for (const e of enemies) {
+      if (!e.dead && Math.hypot(e.x - x, e.y - y) < 1) return true;
+    }
+    return false;
+  }
+
+  function render() {
+    let screen = Array(screenHeight).fill().map(() => Array(screenWidth).fill(' '));
+    let color = Array(screenHeight).fill().map(() => Array(screenWidth).fill(null));
+
+    // Ray casting walls
+    for (let x = 0; x < screenWidth; x++) {
+      const rayAngle = playerAngle - FOV / 2 + (x / screenWidth) * FOV;
+      const dx = Math.sin(rayAngle), dy = Math.cos(rayAngle);
+      let dist = 0, hit = false;
+      while (!hit && dist < maxDepth) {
+        dist += 0.05;
+        let testX = Math.floor(playerX + dx * dist);
+        let testY = Math.floor(playerY + dy * dist);
+        if (getMap(testX, testY) === '#') hit = true;
+      }
+
+      const ceiling = screenHeight / 2 - screenHeight / dist;
+      const floor = screenHeight - ceiling;
+      for (let y = 0; y < screenHeight; y++) {
+        if (y < ceiling) screen[y][x] = ' ';
+        else if (y < floor) screen[y][x] = '█';
+        else screen[y][x] = '.';
+      }
+    }
+
+    // Projectiles - yellow
+    for (let p of projectiles) {
+      p.x += Math.sin(p.angle) * 0.4;
+      p.y += Math.cos(p.angle) * 0.4;
+      p.distance += 0.4;
+
+      const dx = p.x - playerX;
+      const dy = p.y - playerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dx, dy) - playerAngle;
+
+      if (Math.abs(angle) < FOV / 2 && dist < maxDepth) {
+        const screenX = Math.floor((angle + FOV / 2) / FOV * screenWidth);
+        const size = Math.max(1, Math.floor(screenHeight / (dist * 2)));
+        for (let i = 0; i < size; i++) {
+          const sy = Math.floor(screenHeight / 2 - size / 2 + i);
+          if (sy >= 0 && sy < screenHeight && screenX >= 0 && screenX < screenWidth) {
+            screen[sy][screenX] = 'O';
+            color[sy][screenX] = 'yellow';
+          }
+        }
+      }
+    }
+
+    // Enemy death animation frames
+    const explosionFrames = [
+      [
+        "   * *   ",
+        "  * * *  ",
+        " *  *  * ",
+        "  * * *  ",
+        "   * *   ",
+      ],
+      [
+        "  *   *  ",
+        " * *** * ",
+        "* * * * *",
+        " * *** * ",
+        "  *   *  ",
+      ],
+      [
+        "   ***   ",
+        "  * * *  ",
+        " *  *  * ",
+        "  * * *  ",
+        "   ***   ",
+      ]
+    ];
+
+    const dustPile = [
+      "   ...   ",
+      "  .....  ",
+      " ....... ",
+      "  .....  ",
+      "   ...   ",
+    ];
+
+    // Enemies rendering and logic
+    const now = performance.now();
+    for (let enemy of enemies) {
+      if (enemy.dead) {
+        // Draw dust pile
+        const relX = enemy.x - playerX;
+        const relY = enemy.y - playerY;
+        const edist = Math.sqrt(relX * relX + relY * relY);
+        const angle = Math.atan2(relX, relY) - playerAngle;
+        if (Math.abs(angle) < FOV / 2 && edist < maxDepth) {
+          const screenX = Math.floor((angle + FOV / 2) / FOV * screenWidth);
+          const centerY = Math.floor(screenHeight / 2);
+          for (let oy = 0; oy < dustPile.length; oy++) {
+            for (let ox = 0; ox < dustPile[0].length; ox++) {
+              const sx = screenX + ox - Math.floor(dustPile[0].length / 80);
+              const sy = centerY + oy - Math.floor(dustPile.length / 80);
+              if (sx >= 0 && sx < screenWidth && sy >= 0 && sy < screenHeight) {
+                const ch = dustPile[oy][ox];
+                if (ch !== ' ') {
+                  screen[sy][sx] = ch;
+                  color[sy][sx] = 'grey';
+                }
+              }
+            }
+          }
+        }
+        continue;
+      }
+
+      if (enemy.dying) {
+        // Explosion animation
+        const relX = enemy.x - playerX;
+        const relY = enemy.y - playerY;
+        const edist = Math.sqrt(relX * relX + relY * relY);
+        const angle = Math.atan2(relX, relY) - playerAngle;
+        if (Math.abs(angle) < FOV / 2 && edist < maxDepth) {
+          const screenX = Math.floor((angle + FOV / 2) / FOV * screenWidth);
+          const centerY = Math.floor(screenHeight / 2);
+          const frame = explosionFrames[Math.min(enemy.explosionFrame, explosionFrames.length - 1)];
+          for (let oy = 0; oy < frame.length; oy++) {
+            for (let ox = 0; ox < frame[0].length; ox++) {
+              const ch = frame[oy][ox];
+              const sx = screenX + ox - Math.floor(frame[0].length / 2);
+              const sy = centerY + oy - Math.floor(frame.length / 2);
+              if (sx >= 0 && sx < screenWidth && sy >= 0 && sy < screenHeight) {
+                if (ch !== ' ') {
+                  screen[sy][sx] = ch;
+                  color[sy][sx] = 'red';
+                }
+              }
+            }
+          }
+          if (now - enemy.explosionStartTime > 300) {
+            enemy.explosionFrame++;
+            enemy.explosionStartTime = now;
+            if (enemy.explosionFrame >= explosionFrames.length) {
+              enemy.dying = false;
+              enemy.dead = true;
+            }
+          }
+        }
+        continue;
+      }
+
+      // Normal enemy rendering
+      const relX = enemy.x - playerX;
+      const relY = enemy.y - playerY;
+      const edist = Math.sqrt(relX * relX + relY * relY);
+      const angle = Math.atan2(relX, relY) - playerAngle;
+      if (Math.abs(angle) < FOV / 2 && edist < maxDepth) {
+        const screenX = Math.floor((angle + FOV / 2) / FOV * screenWidth);
+        const centerY = Math.floor(screenHeight / 2);
+        for (let oy = 0; oy < enemyShape.length; oy++) {
+          for (let ox = 0; ox < enemyShape[0].length; ox++) {
+            const ch = enemyShape[oy][ox];
+            if (ch !== ' ') {
+              const sx = screenX + ox - Math.floor(enemyShape[0].length / 2);
+              const sy = centerY + oy - Math.floor(enemyShape.length / 2);
+              if (sx >= 0 && sx < screenWidth && sy >= 0 && sy < screenHeight) {
+                screen[sy][sx] = ch;
+                color[sy][sx] = 'green';
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Draw health bar at bottom left
+    const healthBarWidth = 30;
+    const healthBlocks = Math.floor((health / maxHealth) * healthBarWidth);
+    const healthBarY = screenHeight - 2;
+    for (let i = 0; i < healthBarWidth; i++) {
+      const ch = i < healthBlocks ? '█' : ' ';
+      screen[healthBarY][i] = ch;
+      color[healthBarY][i] = 'red';
+    }
+    const healthText = ` HP: ${health} / ${maxHealth} `;
+    for (let i = 0; i < healthText.length; i++) {
+      screen[healthBarY][healthBarWidth + i] = healthText[i];
+      color[healthBarY][healthBarWidth + i] = 'red';
+    }
+
+    // Convert screen & color arrays into a string with colored spans
+    let output = '';
+    for (let y = 0; y < screenHeight; y++) {
+      for (let x = 0; x < screenWidth; x++) {
+        let ch = screen[y][x];
+        let col = color[y][x];
+        if (col) {
+          output += `<span class="${col}">${ch}</span>`;
+        } else {
+          output += ch;
+        }
+      }
+      output += '\n';
+    }
+    gameEl.innerHTML = output;
+  }
+
+  // Update logic
+  function update() {
+    // Player movement
+    let moveSpeed = 0.1;
+    let dx = 0, dy = 0;
+    if (keys['w']) { dx += Math.sin(playerAngle) * moveSpeed; dy += Math.cos(playerAngle) * moveSpeed; }
+    if (keys['s']) { dx -= Math.sin(playerAngle) * moveSpeed; dy -= Math.cos(playerAngle) * moveSpeed; }
+    if (keys['a']) { dx -= Math.sin(playerAngle + Math.PI/2) * moveSpeed; dy -= Math.cos(playerAngle + Math.PI/2) * moveSpeed; }
+    if (keys['d']) { dx += Math.sin(playerAngle + Math.PI/2) * moveSpeed; dy += Math.cos(playerAngle + Math.PI/2) * moveSpeed; }
+
+    if (getMap(playerX + dx, playerY) === ' ' && !collidesWithEnemy(playerX + dx, playerY)) playerX += dx;
+    if (getMap(playerX, playerY + dy) === ' ' && !collidesWithEnemy(playerX, playerY + dy)) playerY += dy;
+
+    // Enemies AI move towards player
+    for (let enemy of enemies) {
+      if (enemy.dead || enemy.dying) continue;
+
+      const dx = playerX - enemy.x;
+      const dy = playerY - enemy.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > 0.5) {
+        const stepX = (dx / dist) * 0.02;
+        const stepY = (dy / dist) * 0.02;
+
+        if (getMap(enemy.x + stepX, enemy.y) === ' ' && !collidesWithEnemy(enemy.x + stepX, enemy.y) &&
+            Math.hypot(enemy.x + stepX - playerX, enemy.y - playerY) > 0.6) {
+          enemy.x += stepX;
+        }
+        if (getMap(enemy.x, enemy.y + stepY) === ' ' && !collidesWithEnemy(enemy.x, enemy.y + stepY) &&
+            Math.hypot(enemy.x - playerX, enemy.y + stepY - playerY) > 0.6) {
+          enemy.y += stepY;
+        }
+      } else {
+        // Attack player every 2 seconds
+        if (!enemy.lastAttackTime || performance.now() - enemy.lastAttackTime > 2000) {
+          health -= 10;
+          if (health < 0) health = 0;
+          enemy.lastAttackTime = performance.now();
+        }
+      }
+    }
+
+    // Projectile collisions
+    projectiles = projectiles.filter(p => p.distance < maxDepth);
+    for (let p of projectiles) {
+      for (let enemy of enemies) {
+        if (enemy.dead || enemy.dying) continue;
+        const dist = Math.hypot(enemy.x - p.x, enemy.y - p.y);
+        if (dist < 0.7) {
+          enemy.health -= 10;
+          p.distance = maxDepth + 1; // remove projectile
+
+          if (enemy.health <= 0 && !enemy.dying) {
+            enemy.dying = true;
+            enemy.explosionFrame = 0;
+            enemy.explosionStartTime = performance.now();
+          }
+        }
+      }
+    }
+
+    if (health <= 0) {
+      alert("Game Over!");
+      health = maxHealth;
+      playerX = 80;
+      playerY = 80;
+      enemies = [];
+      spawnEnemies(20);
+    }
+  }
+
+  // Mouse look
+  window.addEventListener('mousemove', (e) => {
+    if (document.pointerLockElement === document.body) {
+      playerAngle += e.movementX * 0.0025;
+    }
+  });
+
+  // Keyboard events
+  window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    if (e.key === ' ') {
+      shoot();
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('keyup', e => {
+    keys[e.key.toLowerCase()] = false;
+  });
+
+  // Pointer lock on click
+  document.body.addEventListener('click', () => {
+    document.body.requestPointerLock();
+  });
+
+  // Game loop
+  function gameLoop() {
+    update();
+    render();
+    requestAnimationFrame(gameLoop);
+  }
+
+  // Init
+  spawnEnemies(20);
+  gameLoop();
+
+</script>
+</body>
+</html>
