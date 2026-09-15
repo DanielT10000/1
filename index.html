@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="Educational nuclear-effects map using simplified yield scaling laws."
+  />
+  <title>Nuclear Effects Map</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIINfQ3ynRYuYnpfYyMZ/OlZ2QmJ2Y6R/PM="
+    crossorigin=""
+  />
+
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      overflow: hidden;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+    }
+
+    #map {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+
+    #controlPanel {
+      max-height: calc(100vh - 2rem);
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+
+    .leaflet-control-attribution {
+      font-size: 10px;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 9999px;
+      flex: 0 0 auto;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+    }
+
+    .formula {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+    }
+
+    @media (max-width: 768px) {
+      #controlPanel {
+        width: calc(100vw - 1rem);
+        max-height: 58vh;
+        left: 0.5rem;
+        top: 0.5rem;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-slate-950">
+  <div id="map" aria-label="Interactive nuclear effects map"></div>
+
+  <aside
+    id="controlPanel"
+    class="absolute left-4 top-4 z-[1000] w-[390px] rounded-2xl border border-white/10 bg-slate-950/95 p-5 text-slate-100 shadow-2xl backdrop-blur"
+  >
+    <div class="mb-5">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.22em] text-amber-400">
+            Educational simulator
+          </p>
+          <h1 class="mt-1 text-2xl font-black tracking-tight">
+            Nuclear Effects Map
+          </h1>
+        </div>
+        <div
+          class="rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-bold text-amber-300"
+        >
+          Surface burst
+        </div>
+      </div>
+
+      <p class="mt-3 text-sm leading-6 text-slate-300">
+        Drag the ground-zero marker or click the map, choose a yield, then render
+        simplified effect radii.
+      </p>
+    </div>
+
+    <div class="space-y-4">
+      <div>
+        <label
+          for="weaponPreset"
+          class="mb-1.5 block text-sm font-semibold text-slate-200"
+        >
+          Historical weapon / yield preset
+        </label>
+        <select
+          id="weaponPreset"
+          class="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20"
+        >
+          <option value="0.02">Davy Crockett — 0.02 kt</option>
+          <option value="15" selected>Little Boy — 15 kt</option>
+          <option value="21">Fat Man — 21 kt</option>
+          <option value="300">W87 — 300 kt</option>
+          <option value="50000">Tsar Bomba — 50,000 kt</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+
+      <div>
+        <label
+          for="customYield"
+          class="mb-1.5 block text-sm font-semibold text-slate-200"
+        >
+          Custom yield (kilotons)
+        </label>
+        <input
+          id="customYield"
+          type="number"
+          min="0.001"
+          step="any"
+          value="15"
+          disabled
+          class="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition disabled:cursor-not-allowed disabled:opacity-50 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20"
+        />
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 rounded-xl bg-slate-900/80 p-3 text-xs">
+        <div>
+          <span class="block text-slate-400">Selected yield</span>
+          <strong id="selectedYieldText" class="mt-1 block text-base text-white">
+            15 kt
+          </strong>
+        </div>
+        <div>
+          <span class="block text-slate-400">Ground zero</span>
+          <strong
+            id="coordinateText"
+            class="mt-1 block break-words text-sm font-semibold text-white"
+          >
+            40.7128, -74.0060
+          </strong>
+        </div>
+      </div>
+
+      <button
+        id="detonateButton"
+        type="button"
+        class="w-full rounded-xl bg-red-600 px-4 py-3.5 text-base font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-red-950/30 transition hover:bg-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/30 active:scale-[0.99]"
+      >
+        Detonate
+      </button>
+
+      <div class="flex gap-2">
+        <button
+          id="clearButton"
+          type="button"
+          class="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+        >
+          Clear effects
+        </button>
+        <button
+          id="recenterButton"
+          type="button"
+          class="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+        >
+          Center marker
+        </button>
+      </div>
+    </div>
+
+    <section class="mt-6 border-t border-slate-800 pt-5">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-black uppercase tracking-[0.16em] text-slate-200">
+          Effects legend
+        </h2>
+        <span id="legendYield" class="text-xs font-medium text-slate-400">
+          15 kt
+        </span>
+      </div>
+
+      <div id="legend" class="space-y-3"></div>
+    </section>
+
+    <section class="mt-6 border-t border-slate-800 pt-5">
+      <h2 class="text-sm font-black uppercase tracking-[0.16em] text-slate-200">
+        Scaling equations
+      </h2>
+
+      <div class="mt-3 space-y-2 text-xs leading-5 text-slate-400">
+        <p class="formula">Fireball: R = 110 × Y^0.40</p>
+        <p class="formula">20 psi blast: R = 140 × Y^0.33</p>
+        <p class="formula">500 rem: R = 1000 × Y^0.19</p>
+        <p class="formula">5 psi blast: R = 370 × Y^0.33</p>
+        <p class="formula">Thermal: R = 440 × Y^0.41</p>
+      </div>
+
+      <p class="mt-3 text-xs leading-5 text-slate-500">
+        R is radius in meters and Y is explosive yield in kilotons. These are
+        simplified scaling relationships for educational visualization, not a
+        full atmospheric, terrain, shielding, fallout, casualty, or airburst model.
+      </p>
+    </section>
+  </aside>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <script>
+    "use strict";
+
+    // ------------------------------------------------------------
+    // Map initialization
+    // ------------------------------------------------------------
+
+    const INITIAL_GROUND_ZERO = [40.7128, -74.0060]; // New York City
+
+    const map = L.map("map", {
+      zoomControl: true,
+      preferCanvas: true
+    }).setView(INITIAL_GROUND_ZERO, 11);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    const groundZeroMarker = L.marker(INITIAL_GROUND_ZERO, {
+      draggable: true,
+      title: "Ground zero"
+    }).addTo(map);
+
+    groundZeroMarker.bindTooltip("Ground zero", {
+      permanent: false,
+      direction: "top"
+    });
+
+    const effectsLayer = L.layerGroup().addTo(map);
+
+    // ------------------------------------------------------------
+    // DOM references
+    // ------------------------------------------------------------
+
+    const weaponPreset = document.getElementById("weaponPreset");
+    const customYield = document.getElementById("customYield");
+    const detonateButton = document.getElementById("detonateButton");
+    const clearButton = document.getElementById("clearButton");
+    const recenterButton = document.getElementById("recenterButton");
+    const coordinateText = document.getElementById("coordinateText");
+    const selectedYieldText = document.getElementById("selectedYieldText");
+    const legendYield = document.getElementById("legendYield");
+    const legend = document.getElementById("legend");
+
+    // ------------------------------------------------------------
+    // Effect definitions and scaling laws
+    // ------------------------------------------------------------
+
+    const EFFECTS = [
+      {
+        id: "fireball",
+        label: "Fireball",
+        color: "#facc15",
+        fillColor: "#f59e0b",
+        exponent: 0.40,
+        coefficient: 110,
+        description:
+          "Approximate radius of the initial fireball. Conditions inside are unsurvivable and structures/materials are subjected to extreme heat."
+      },
+      {
+        id: "blast20",
+        label: "Heavy blast damage — 20 psi",
+        color: "#dc2626",
+        fillColor: "#ef4444",
+        exponent: 0.33,
+        coefficient: 140,
+        description:
+          "Near-total destruction of many ordinary buildings; severe structural failure and extreme debris hazards."
+      },
+      {
+        id: "radiation500",
+        label: "Prompt ionizing radiation — 500 rem",
+        color: "#16a34a",
+        fillColor: "#22c55e",
+        exponent: 0.19,
+        coefficient: 1000,
+        description:
+          "Approximate prompt neutron/gamma dose of 500 rem, associated with roughly 50–90% mortality without medical care."
+      },
+      {
+        id: "blast5",
+        label: "Moderate blast damage — 5 psi",
+        color: "#fb7185",
+        fillColor: "#fda4af",
+        exponent: 0.33,
+        coefficient: 370,
+        description:
+          "Severe damage to residential construction; many buildings can collapse, with widespread debris and injury risk."
+      },
+      {
+        id: "thermal3rd",
+        label: "Thermal radiation — 3rd-degree burns",
+        color: "#f97316",
+        fillColor: "#fb923c",
+        exponent: 0.41,
+        coefficient: 440,
+        description:
+          "Approximate radius for a thermal exposure associated with third-degree burns at the specified probability model."
+      }
+    ];
+
+    function calculateRadiusMeters(effect, yieldKt) {
+      // Required scaling form:
+      // R = coefficient × (Y ^ exponent)
+      return effect.coefficient * Math.pow(yieldKt, effect.exponent);
+    }
+
+    function calculateAllRadii(yieldKt) {
+      return EFFECTS.map((effect) => ({
+        ...effect,
+        radiusMeters: calculateRadiusMeters(effect, yieldKt)
+      }));
+    }
+
+    // ------------------------------------------------------------
+    // Formatting helpers
+    // ------------------------------------------------------------
+
+    function formatYield(yieldKt) {
+      if (yieldKt >= 1000) {
+        return `${(yieldKt / 1000).toLocaleString(undefined, {
+          maximumFractionDigits: 2
+        })} Mt`;
+      }
+
+      return `${yieldKt.toLocaleString(undefined, {
+        maximumFractionDigits: 4
+      })} kt`;
+    }
+
+    function formatDistance(meters) {
+      if (meters >= 1000) {
+        return `${(meters / 1000).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        })} km`;
+      }
+
+      return `${Math.round(meters).toLocaleString()} m`;
+    }
+
+    function getSelectedYield() {
+      const selected = weaponPreset.value;
+
+      if (selected === "custom") {
+        return Number.parseFloat(customYield.value);
+      }
+
+      return Number.parseFloat(selected);
+    }
+
+    function isValidYield(yieldKt) {
+      return Number.isFinite(yieldKt) && yieldKt > 0;
+    }
+
+    // ------------------------------------------------------------
+    // UI updates
+    // ------------------------------------------------------------
+
+    function updateCoordinateDisplay() {
+      const { lat, lng } = groundZeroMarker.getLatLng();
+      coordinateText.textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    }
+
+    function updateYieldDisplay() {
+      const yieldKt = getSelectedYield();
+
+      if (!isValidYield(yieldKt)) {
+        selectedYieldText.textContent = "Invalid";
+        legendYield.textContent = "—";
+        return;
+      }
+
+      const formatted = formatYield(yieldKt);
+      selectedYieldText.textContent = formatted;
+      legendYield.textContent = formatted;
+    }
+
+    function renderLegend(radii) {
+      legend.innerHTML = "";
+
+      radii.forEach((effect) => {
+        const row = document.createElement("div");
+        row.className =
+          "rounded-xl border border-slate-800 bg-slate-900/70 p-3";
+
+        row.innerHTML = `
+          <div class="flex items-start gap-3">
+            <span
+              class="legend-swatch mt-1"
+              style="background:${effect.fillColor}; border:2px solid ${effect.color};"
+              aria-hidden="true"
+            ></span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-start justify-between gap-3">
+                <h3 class="text-sm font-bold leading-5 text-slate-100">
+                  ${effect.label}
+                </h3>
+                <span class="whitespace-nowrap text-sm font-black text-white">
+                  ${formatDistance(effect.radiusMeters)}
+                </span>
+              </div>
+              <p class="mt-1 text-xs leading-5 text-slate-400">
+                ${effect.description}
+              </p>
+            </div>
+          </div>
+        `;
+
+        legend.appendChild(row);
+      });
+    }
+
+    function refreshPreviewLegend() {
+      const yieldKt = getSelectedYield();
+
+      if (!isValidYield(yieldKt)) {
+        legend.innerHTML = `
+          <div class="rounded-xl border border-red-900/60 bg-red-950/40 p-3 text-sm text-red-200">
+            Enter a yield greater than zero.
+          </div>
+        `;
+        return;
+      }
+
+      renderLegend(calculateAllRadii(yieldKt));
+    }
+
+    // ------------------------------------------------------------
+    // Map effects rendering
+    // ------------------------------------------------------------
+
+    function clearEffects() {
+      effectsLayer.clearLayers();
+    }
+
+    function drawEffects() {
+      const yieldKt = getSelectedYield();
+
+      if (!isValidYield(yieldKt)) {
+        alert("Please enter a valid yield greater than zero kilotons.");
+        customYield.focus();
+        return;
+      }
+
+      clearEffects();
+
+      const center = groundZeroMarker.getLatLng();
+      const radii = calculateAllRadii(yieldKt);
+
+      /*
+        Draw largest circles first so smaller effects remain visible on top.
+        This does not change their physical radii; it only improves map readability.
+      */
+      const drawOrder = [...radii].sort(
+        (a, b) => b.radiusMeters - a.radiusMeters
+      );
+
+      drawOrder.forEach((effect) => {
+        L.circle(center, {
+          radius: effect.radiusMeters,
+          color: effect.color,
+          weight: 2,
+          opacity: 0.95,
+          fillColor: effect.fillColor,
+          fillOpacity: 0.18,
+          interactive: true
+        })
+          .bindTooltip(
+            `<strong>${effect.label}</strong><br>${formatDistance(
+              effect.radiusMeters
+            )}`,
+            { sticky: true }
+          )
+          .addTo(effectsLayer);
+      });
+
+      renderLegend(radii);
+
+      // Fit map to the largest effect radius.
+      const largestRadius = Math.max(...radii.map((item) => item.radiusMeters));
+      const outerCircle = L.circle(center, { radius: largestRadius });
+
+      map.fitBounds(outerCircle.getBounds(), {
+        padding: [40, 40],
+        maxZoom: 13
+      });
+
+      groundZeroMarker.bringToFront();
+    }
+
+    // ------------------------------------------------------------
+    // Interaction
+    // ------------------------------------------------------------
+
+    weaponPreset.addEventListener("change", () => {
+      const isCustom = weaponPreset.value === "custom";
+
+      customYield.disabled = !isCustom;
+
+      if (!isCustom) {
+        customYield.value = weaponPreset.value;
+      } else {
+        customYield.focus();
+        customYield.select();
+      }
+
+      updateYieldDisplay();
+      refreshPreviewLegend();
+    });
+
+    customYield.addEventListener("input", () => {
+      updateYieldDisplay();
+      refreshPreviewLegend();
+    });
+
+    customYield.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        drawEffects();
+      }
+    });
+
+    detonateButton.addEventListener("click", drawEffects);
+
+    clearButton.addEventListener("click", () => {
+      clearEffects();
+    });
+
+    recenterButton.addEventListener("click", () => {
+      const center = map.getCenter();
+      groundZeroMarker.setLatLng(center);
+      updateCoordinateDisplay();
+
+      if (effectsLayer.getLayers().length > 0) {
+        drawEffects();
+      }
+    });
+
+    map.on("click", (event) => {
+      groundZeroMarker.setLatLng(event.latlng);
+      updateCoordinateDisplay();
+
+      // Clicking relocates ground zero but leaves re-rendering to Detonate.
+      // This mirrors the explicit "choose target, then detonate" interaction.
+    });
+
+    groundZeroMarker.on("drag", updateCoordinateDisplay);
+
+    groundZeroMarker.on("dragend", () => {
+      updateCoordinateDisplay();
+    });
+
+    // ------------------------------------------------------------
+    // Initial state
+    // ------------------------------------------------------------
+
+    updateCoordinateDisplay();
+    updateYieldDisplay();
+    refreshPreviewLegend();
+  </script>
+</body>
+</html>
