@@ -1,0 +1,1913 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <title>Nuclear Effects Map — NUKEMAP Calculation Engine</title>
+
+  <!-- Tailwind, used only as a UI enhancement. -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+
+  <script>
+    /*
+      NUKEMAP library loader bookkeeping.
+      Some of Alex Wellerstein's supporting files call loaded(this) in the
+      original application, so define it before importing them.
+    */
+    window.NM_LIBRARY_STATUS = { loaded: [], failed: [] };
+
+    function loaded(element) {
+      const src = element && (element.src || element.href) ? (element.src || element.href) : "unknown";
+      window.NM_LIBRARY_STATUS.loaded.push(src);
+    }
+
+    function libraryFailed(element) {
+      const src = element && (element.src || element.href) ? (element.src || element.href) : "unknown";
+      window.NM_LIBRARY_STATUS.failed.push(src);
+      console.error("NUKEMAP library failed to load:", src);
+    }
+  </script>
+
+  <!-- jQuery is used by some NUKEMAP support scripts. -->
+  <script
+    src="https://static.nuclearsecrecy.com/jquery-3.6.0.min.js"
+    onload="loaded(this)"
+    onerror="libraryFailed(this)"
+  ></script>
+
+  <!--
+    NUKEMAP libraries supplied by the user.
+
+    The actual acute-effects radius calculations below are intentionally routed
+    through nukeeffects.js. The other files are loaded for the same helper /
+    preset / extension environment used by NUKEMAP.
+
+    nukemap2.js is NOT loaded because it is the full NUKEMAP application/UI
+    controller and expects NUKEMAP's own DOM, mapUI globals, settings objects,
+    and event lifecycle. Loading it into this independent Leaflet app would
+    cause namespace/DOM conflicts; it is not the effects calculation library.
+  -->
+  <script
+    type="text/javascript"
+    src="https://static.nuclearsecrecy.com/geo.js?v=202311"
+    onload="loaded(this)"
+    onerror="libraryFailed(this)"
+  ></script>
+  <script
+    type="text/javascript"
+    src="https://static.nuclearsecrecy.com/shared.js?v=20250727"
+    onload="loaded(this)"
+    onerror="libraryFailed(this)"
+  ></script>
+  <script
+    type="text/javascript"
+    src="https://static.nuclearsecrecy.com/presets.js?v=202311"
+    onload="loaded(this)"
+    onerror="libraryFailed(this)"
+  ></script>
+  <script
+    type="text/javascript"
+    src="https://static.nuclearsecrecy.com/nukeeffects.js?v=202311"
+    onload="loaded(this)"
+    onerror="libraryFailed(this)"
+  ></script>
+  <script
+    type="text/javascript"
+    src="https://static.nuclearsecrecy.com/nukekmz.js?v=202311"
+    onload="loaded(this)"
+    onerror="libraryFailed(this)"
+  ></script>
+  <script
+    type="text/javascript"
+    src="https://static.nuclearsecrecy.com/casualties.js?v=202311"
+    onload="loaded(this)"
+    onerror="libraryFailed(this)"
+  ></script>
+  <script
+    type="text/javascript"
+    src="https://static.nuclearsecrecy.com/fallout.js?v=20260209"
+    onload="loaded(this)"
+    onerror="libraryFailed(this)"
+  ></script>
+
+  <style>
+    :root {
+      --panel-bg: rgba(8, 13, 22, 0.95);
+      --panel-border: rgba(255,255,255,.12);
+      --text: #f8fafc;
+      --muted: #aeb9c8;
+      --muted2: #728096;
+      --danger: #dc2626;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #0b1220;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    button, input, select { font: inherit; }
+
+    #map {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background: #0f172a;
+    }
+
+    #panel {
+      position: fixed;
+      z-index: 1000;
+      top: 16px;
+      left: 16px;
+      width: min(420px, calc(100vw - 32px));
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      background: var(--panel-bg);
+      box-shadow: 0 18px 55px rgba(0,0,0,.45);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      scrollbar-width: thin;
+    }
+
+    .inner { padding: 18px; }
+
+    .eyebrow {
+      margin: 0 0 4px;
+      color: #fbbf24;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.1;
+      letter-spacing: -.025em;
+    }
+
+    .intro {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border: 1px solid rgba(245,158,11,.3);
+      border-radius: 999px;
+      background: rgba(245,158,11,.1);
+      color: #fde68a;
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .badge.status-ok {
+      border-color: rgba(34,197,94,.35);
+      background: rgba(34,197,94,.1);
+      color: #bbf7d0;
+    }
+
+    .badge.status-bad {
+      border-color: rgba(239,68,68,.38);
+      background: rgba(127,29,29,.25);
+      color: #fecaca;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .section {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255,255,255,.08);
+    }
+
+    .field { margin-bottom: 13px; }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: #e5e7eb;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    select, input[type="number"] {
+      width: 100%;
+      min-height: 42px;
+      padding: 9px 11px;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      outline: none;
+      background: #0f172a;
+      color: #fff;
+    }
+
+    select:focus, input[type="number"]:focus {
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 3px rgba(245,158,11,.16);
+    }
+
+    input:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.25fr;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .status-card {
+      min-width: 0;
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 10px;
+      background: rgba(17,24,39,.85);
+    }
+
+    .status-label {
+      color: var(--muted2);
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .status-value {
+      display: block;
+      margin-top: 3px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 850;
+      overflow-wrap: anywhere;
+    }
+
+    .detonate {
+      width: 100%;
+      min-height: 50px;
+      margin-top: 14px;
+      border: 0;
+      border-radius: 11px;
+      background: var(--danger);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 950;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 10px 28px rgba(127,29,29,.35);
+    }
+
+    .detonate:hover { background: #ef4444; }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .secondary {
+      min-height: 39px;
+      padding: 8px 10px;
+      border: 1px solid #334155;
+      border-radius: 9px;
+      background: #111827;
+      color: #e5e7eb;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .secondary:hover { background: #1f2937; }
+
+    .section-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 10px;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .section-title small {
+      color: var(--muted2);
+      font-size: 10px;
+      font-weight: 750;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    #legend {
+      display: grid;
+      gap: 8px;
+    }
+
+    .legend-item {
+      display: grid;
+      grid-template-columns: 14px minmax(0,1fr);
+      gap: 10px;
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 10px;
+      background: rgba(17,24,39,.72);
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      margin-top: 2px;
+      border-radius: 999px;
+      border: 2px solid currentColor;
+    }
+
+    .legend-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .legend-name {
+      min-width: 0;
+      color: #f8fafc;
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.3;
+    }
+
+    .legend-radius {
+      white-space: nowrap;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    .legend-desc,
+    .legend-api {
+      margin-top: 4px;
+      color: #9ca3af;
+      font-size: 10.5px;
+      line-height: 1.45;
+    }
+
+    .legend-api {
+      color: #64748b;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    #errorBanner {
+      display: none;
+      margin-top: 12px;
+      padding: 10px;
+      border: 1px solid rgba(248,113,113,.35);
+      border-radius: 9px;
+      background: rgba(127,29,29,.28);
+      color: #fecaca;
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .technical {
+      color: #8b98aa;
+      font-size: 10.5px;
+      line-height: 1.5;
+    }
+
+    .technical code {
+      color: #cbd5e1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .gz-wrap { position: relative; width: 34px; height: 34px; }
+    .gz-ring {
+      position: absolute;
+      inset: 1px;
+      border: 3px solid white;
+      border-radius: 999px;
+      background: rgba(220,38,38,.24);
+      box-shadow: 0 0 0 3px rgba(220,38,38,.92), 0 3px 14px rgba(0,0,0,.45);
+    }
+    .gz-v,.gz-h { position:absolute; background:white; box-shadow:0 0 2px rgba(0,0,0,.75); }
+    .gz-v { width:2px; height:42px; left:16px; top:-4px; }
+    .gz-h { height:2px; width:42px; top:16px; left:-4px; }
+    .gz-dot { position:absolute; width:6px; height:6px; left:14px; top:14px; border-radius:999px; background:white; }
+
+    .leaflet-control-attribution {
+      background: rgba(15,23,42,.86) !important;
+      color: #cbd5e1 !important;
+      font-size: 9px !important;
+    }
+    .leaflet-control-attribution a { color: #fde68a !important; }
+
+
+    .three-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .export-button {
+      grid-column: 1 / -1;
+      min-height: 40px;
+      border: 1px solid rgba(59,130,246,.45);
+      border-radius: 9px;
+      background: rgba(30,64,175,.32);
+      color: #dbeafe;
+      font-size: 12px;
+      font-weight: 850;
+      cursor: pointer;
+    }
+
+    .export-button:hover {
+      background: rgba(37,99,235,.45);
+    }
+
+    .export-button:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .preset-meta {
+      margin-top: 6px;
+      color: #7f8da1;
+      font-size: 10.5px;
+      line-height: 1.45;
+    }
+
+    /* KMZ modal */
+    #kmzmodal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 5000;
+      padding: 24px;
+      background: rgba(2,6,23,.78);
+      overflow: auto;
+    }
+
+    #kmzmenu {
+      width: min(820px, 100%);
+      margin: 4vh auto;
+      padding: 20px;
+      border: 1px solid rgba(255,255,255,.13);
+      border-radius: 16px;
+      background: #0b1220;
+      color: #f8fafc;
+      box-shadow: 0 24px 80px rgba(0,0,0,.55);
+    }
+
+    #closekmzwindow {
+      float: right;
+      margin-top: -8px;
+      margin-right: -4px;
+    }
+
+    #closekmzwindow a {
+      color: #cbd5e1;
+      font-size: 28px;
+      text-decoration: none;
+    }
+
+    #kmzmenu h2 {
+      margin: 0 30px 14px 0;
+      font-size: 20px;
+    }
+
+    #kmzmenu_detlist {
+      display: block;
+      margin-top: 4px;
+      color: #94a3b8;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .kmz-heading {
+      margin-top: 14px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #111827;
+      color: #f8fafc;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .kmz-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .kmz-box {
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 10px;
+      background: #0f172a;
+    }
+
+    .kmz-box h3 {
+      margin: 0 0 8px;
+      color: #e2e8f0;
+      font-size: 12px;
+    }
+
+    .kmz-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 6px 0;
+      color: #cbd5e1;
+      font-size: 12px;
+    }
+
+    .kmz-field {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      gap: 10px;
+      align-items: center;
+      margin: 7px 0;
+      color: #cbd5e1;
+      font-size: 11px;
+    }
+
+    .kmz-field input,
+    .kmz-field select {
+      min-height: 34px;
+      padding: 6px 8px;
+      border: 1px solid #334155;
+      border-radius: 7px;
+      background: #111827;
+      color: #fff;
+    }
+
+    #kmzmenu_adv {
+      display: none;
+    }
+
+    #kmzadv_showhide {
+      color: #fbbf24;
+      text-decoration: none;
+    }
+
+    #exportKMZ {
+      width: 100%;
+      min-height: 42px;
+      margin-top: 14px;
+      border: 0;
+      border-radius: 9px;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    #exportKMZ:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .kmz-caption {
+      margin-top: 8px;
+      color: #64748b;
+      font-size: 10px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 700px) {
+      .kmz-grid { grid-template-columns: 1fr; }
+      #kmzmodal { padding: 8px; }
+      #kmzmenu { margin: 1vh auto; padding: 14px; }
+    }
+
+    @media (max-width: 700px) {
+      #panel {
+        top: 8px;
+        left: 8px;
+        width: calc(100vw - 16px);
+        max-height: 55vh;
+      }
+      .inner { padding: 14px; }
+      h1 { font-size: 21px; }
+      .leaflet-control-zoom { margin-top: calc(55vh + 18px) !important; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <aside id="panel">
+    <div class="inner">
+      <p class="eyebrow">NUKEMAP calculation engine</p>
+      <h1>Nuclear Effects Map</h1>
+      <p class="intro">
+        Click the map or drag the crosshair to choose ground zero. Effect radii are
+        calculated with Alex Wellerstein's <code>nukeeffects.js</code>. Historical
+        presets use their stored burst type and height instead of being forced
+        into a surface-burst model.
+      </p>
+
+      <div class="badges">
+        <span id="burstBadge" class="badge">Historical burst geometry</span>
+        <span id="libStatus" class="badge">
+          <span class="dot"></span>
+          Checking NUKEMAP API
+        </span>
+      </div>
+
+      <div id="errorBanner" role="alert"></div>
+
+      <section class="section">
+        <div class="field">
+          <label for="sitePreset">Target preset</label>
+          <select id="sitePreset"></select>
+        </div>
+
+        <div class="field">
+          <label for="weaponPreset">Weapon / yield preset</label>
+          <select id="weaponPreset"></select>
+          <div id="weaponMeta" class="preset-meta"></div>
+        </div>
+
+        <div class="field">
+          <label for="yieldInput">Yield (kilotons)</label>
+          <input id="yieldInput" type="number" min="0.001" step="any" value="15" disabled />
+        </div>
+
+        <div class="status-grid">
+          <div class="status-card">
+            <span class="status-label">Yield</span>
+            <strong id="yieldReadout" class="status-value">15 kt</strong>
+          </div>
+          <div class="status-card">
+            <span class="status-label">Ground zero</span>
+            <strong id="coordsReadout" class="status-value">40.71280, -74.00600</strong>
+          </div>
+          <div class="status-card" style="grid-column:1 / -1">
+            <span class="status-label">Burst model used for effects</span>
+            <strong id="burstReadout" class="status-value">Historical preset</strong>
+          </div>
+        </div>
+
+        <button id="detonateBtn" class="detonate" type="button">Detonate</button>
+
+        <div class="three-buttons">
+          <button id="clearBtn" class="secondary" type="button">Clear effects</button>
+          <button id="resetBtn" class="secondary" type="button">Reset to NYC</button>
+          <button id="openKmzBtn" class="export-button" type="button" disabled>Export to Google Earth (KMZ)</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title">
+          <span>Effects legend</span>
+          <small id="legendYield">15 kt</small>
+        </h2>
+        <div id="legend"></div>
+      </section>
+
+      <section class="section">
+        <h2 class="section-title"><span>Calculation source</span></h2>
+        <div class="technical">
+          <p style="margin:0 0 7px">
+            Blast uses <code>range_from_psi_hob(yieldKt, psi, hobFt)</code>.
+            NUKEMAP returns this distance in <strong>feet</strong>, which is
+            converted directly to meters before drawing.
+          </p>
+          <p style="margin:0 0 7px">
+            Fireball uses miles. Prompt-radiation and thermal distances are
+            handled as miles; for airbursts their slant ranges are projected to
+            ground range using the burst height before plotting.
+          </p>
+          <p style="margin:0">
+            NUKEMAP's older effects library is not a formal stable public API, so
+            this page checks the functions at runtime and reports an error instead
+            of silently substituting a different physics model.
+          </p>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+
+  <div id="kmzmodal" class="modal" aria-hidden="true">
+    <div id="kmzmenu">
+      <div id="closekmzwindow">
+        <a title="Hide the Export to KMZ window" href="#"
+           onclick='$("#kmzmodal").fadeOut(300); return false;'>&times;</a>
+      </div>
+
+      <h2>
+        Export to Google Earth (KMZ) <sup>(beta)</sup>
+        <span id="kmzmenu_detlist">No detonations to export!</span>
+      </h2>
+
+      <div class="kmz-heading">Render objects</div>
+      <div class="kmz-grid">
+        <div class="kmz-box">
+          <label class="kmz-check"><input type="checkbox" id="render_rings" checked> Render effects as rings on ground</label>
+          <label class="kmz-check"><input type="checkbox" id="render_fireball_sphere"> Render fireball as 3D sphere</label>
+          <label class="kmz-check"><input type="checkbox" id="render_fallout"> Render fallout contours on ground</label>
+          <label class="kmz-check"><input type="checkbox" id="render_cloud" checked> Render 3D mushroom cloud</label>
+          <label class="kmz-check"><input type="checkbox" id="render_animated_cloud"> Render animated cloud (if supported)</label>
+        </div>
+
+        <div class="kmz-box">
+          <button id="exportKMZ" disabled onclick="exportKMZ(); return false;">Download file</button>
+          <div class="kmz-caption">
+            Export is submitted to NUKEMAP's KMZ export endpoint and opens in a new tab.
+          </div>
+        </div>
+      </div>
+
+      <div class="kmz-heading">
+        Advanced display options
+        <a id="kmzadv_showhide" href="#" onclick="kmzadv_showhide(); return false;">[+]</a>
+      </div>
+
+      <div id="kmzmenu_adv">
+        <div class="kmz-grid">
+          <div class="kmz-box">
+            <h3>Effect ring settings</h3>
+
+            <div class="kmz-field">
+              <span>Draw mode</span>
+              <select id="ring_mode">
+                <option value="0" selected>Basic</option>
+                <option value="1">Donuts</option>
+                <option value="2">Line only</option>
+                <option value="3">Fill only</option>
+              </select>
+            </div>
+
+            <div class="kmz-field">
+              <span>Altitude mode</span>
+              <select id="ring_altitude_mode">
+                <option value="1" selected>Staggered</option>
+                <option value="0">Single</option>
+              </select>
+            </div>
+
+            <div class="kmz-field"><span>Base altitude (m)</span><input type="text" id="ring_altitude_base" value="150"></div>
+            <div class="kmz-field"><span>Stagger distance (m)</span><input type="text" id="ring_altitude_stack" value="5"></div>
+            <div class="kmz-field"><span>Fill opacity (0–1)</span><input type="text" id="ring_fill_alpha" value=".5"></div>
+            <div class="kmz-field"><span>Line width (px)</span><input type="text" id="ring_line_width" value="2"></div>
+            <div class="kmz-field"><span>Line opacity (0–1)</span><input type="text" id="ring_line_alpha" value=".8"></div>
+            <div class="kmz-field"><span>Circle steps</span><input type="text" id="circle_steps" value="64"></div>
+          </div>
+
+          <div class="kmz-box">
+            <h3>Fallout contour settings</h3>
+
+            <div class="kmz-field">
+              <span>Draw mode</span>
+              <select id="fallout_mode">
+                <option value="0" selected>Basic</option>
+                <option value="2">Line only</option>
+                <option value="3">Fill only</option>
+              </select>
+            </div>
+
+            <div class="kmz-field"><span>Fill opacity (0–1)</span><input type="text" id="fallout_fill_alpha" value=".4"></div>
+            <div class="kmz-field"><span>Line width (px)</span><input type="text" id="fallout_line_width" value="1"></div>
+            <div class="kmz-field"><span>Line opacity (0–1)</span><input type="text" id="fallout_line_alpha" value=".6"></div>
+
+            <h3 style="margin-top:16px">KMZ settings</h3>
+
+            <div class="kmz-field">
+              <span>Polygon altitude mode</span>
+              <select id="ring_KMLaltitudeMode">
+                <option value="0" selected>Absolute</option>
+                <option value="1">Relative to ground</option>
+              </select>
+            </div>
+
+            <label class="kmz-check"><input type="checkbox" id="force_kml"> Use KML, not KMZ</label>
+            <label class="kmz-check"><input type="checkbox" id="remote_dae"> Use remotely linked 3D models</label>
+          </div>
+        </div>
+      </div>
+
+      <form
+        id="kmzForm"
+        action="https://db.nuclearsecrecy.com/nukemap/scripts/export_kmz.php"
+        method="POST"
+        target="_blank"
+      ></form>
+    </div>
+  </div>
+
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+
+  <script>
+  /*
+    NUKEMAP-compatible data structures used by the KMZ functions supplied by
+    the user. This app currently keeps one active detonation in dets[].
+  */
+  var dets = [];
+
+  if (typeof window.latval !== "function") {
+    window.latval = function(pos) {
+      if (!pos) return 0;
+      if (typeof pos.lat === "function") return pos.lat();
+      if (typeof pos.lat === "number") return pos.lat;
+      if (Array.isArray(pos)) return Number(pos[0]);
+      return 0;
+    };
+  }
+
+  if (typeof window.lngval !== "function") {
+    window.lngval = function(pos) {
+      if (!pos) return 0;
+      if (typeof pos.lng === "function") return pos.lng();
+      if (typeof pos.lng === "number") return pos.lng;
+      if (Array.isArray(pos)) return Number(pos[1]);
+      return 0;
+    };
+  }
+
+  function init_kmzmenu() {
+      $("#kmzmenu_detlist").html(dets.length+ " detonation"+(dets.length==1?"":"s")+" to export");
+      $('#kmzmodal').fadeIn(300);
+  }
+
+  function kmzadv_showhide() {
+      if(document.getElementById("kmzmenu_adv").style.display != "block") {
+          document.getElementById("kmzmenu_adv").style.display = "block";
+          document.getElementById("kmzadv_showhide").innerHTML = "[&minus;]";
+      } else {
+          document.getElementById("kmzmenu_adv").style.display = "none";
+          document.getElementById("kmzadv_showhide").innerHTML = "[&plus;]";
+      }
+  }
+
+  function exportKMZ() {
+      if(dets.length<1) {
+          alert("No detonation settings are detected, so they cannot yet be exported. Please click 'Detonate' and try again.");
+          $("#kmzmodal").fadeOut(300);
+          return false;
+      }
+      if(!($("#render_fireball_sphere").prop("checked") ||
+           $("#render_rings").prop("checked") ||
+           $("#render_cloud").prop("checked") ||
+           $("#render_fallout").prop("checked") ||
+           $("#render_animated_cloud").prop("checked")
+           ))
+      {
+          alert("You haven't selected anything to render.");
+          return false;
+      }
+      var kmz_opt = {
+          "render_fireball_sphere":$("#render_fireball_sphere").prop("checked")?1:0,
+          "render_rings":$("#render_rings").prop("checked")?1:0,
+          "render_cloud":$("#render_cloud").prop("checked")?1:0,
+          "render_fallout":$("#render_fallout").prop("checked")?1:0,
+          "render_animated_cloud":$("#render_animated_cloud").prop("checked")?1:0,
+          "ring_mode":$("#ring_mode").val(),
+          "fallout_mode":$("#fallout_mode").val(),
+          "ring_altitude_mode":$("#ring_altitude_mode").val(),
+          "ring_altitude_base":$("#ring_altitude_base").val(),
+          "ring_altitude_stack":$("#ring_altitude_stack").val(),
+          "ring_KMLaltitudeMode":$("#ring_KMLaltitudeMode").val(),
+          "ring_fill_alpha":$("#ring_fill_alpha").val(),
+          "ring_line_width":$("#ring_line_width").val(),
+          "ring_line_alpha":$("#ring_line_alpha").val(),
+          "fallout_fill_alpha":$("#fallout_fill_alpha").val(),
+          "fallout_line_alpha":$("#fallout_line_alpha").val(),
+          "fallout_line_width":$("#fallout_line_width").val(),
+          "circle_steps":$("#circle_steps").val(),
+          "force_kml":$("#force_kml").prop("checked")?1:0,
+          "remote_dae":$("#remote_dae").prop("checked")?1:0,
+      }
+      var kdets = [];
+      for(var i in dets) {
+          var d = dets[i];
+          kdets.push({
+              airburst: d.airburst?1:0,
+              hob: d.hob,
+              hob_opt: d.hob_opt,
+              hob_opt_psi: d.hob_opt_psi,
+              fireball: d.fireball?1:0,
+              psi: d.psi,
+              rem: d.rem,
+              therm: d.therm,
+              fallout: d.fallout?1:0,
+              fallout_wind: d.fallout_wind,
+              ff: d.ff,
+              fallout_angle: d.fallout_angle,
+              fallout_rad_doses: d.fallout_rad_doses,
+              kt: d.kt,
+              lat: latval(d.pos),
+              lng: lngval(d.pos),
+          });
+      }
+
+      $("#kmzForm").html("");
+      for(var key in kmz_opt) {
+          addHidden("kmz_opt["+key+"]",kmz_opt[key])
+      }
+      for(var x in kdets) {
+          for(var field in kdets[x]) {
+              addHidden("dets["+x+"]["+field+"]",kdets[x][field]);
+          }
+      }
+      $("#kmzForm").submit();
+  }
+
+  function addHidden (name, value) {
+      var input = $("<input>").attr("type", "hidden").attr("name", name).val(value);
+      $("#kmzForm").append($(input));
+  };
+
+  function menuPresets() {
+    var presets = {};
+    presets.sites = [
+      {lat:38.89469253046311, lng:-77.02189926086425, name: "Washington, DC, USA"},
+      {lat:40.72422, lng:-73.9961, name: "New York, NY, USA"},
+      {lat:42.358056, lng:-71.063611, name: "Boston, MA, USA"},
+      {lat:34.04539016791607, lng:-118.25251583038329, name: "Los Angeles, CA, USA"},
+      {lat:37.756450878452306, lng:-122.424551662384032, name: "San Francisco, CA, USA"},
+      {lat:41.86993043630711, lng:-87.63636592803954, name: "Chicago, IL, USA"},
+      {lat:39.98670787517569, lng:-75.11298183380126, name: "Philadelphia, PA, USA"},
+      {lat:21.307, lng:-157.858, name: "Honolulu, HI, USA"},
+      {lat:55.751667, lng:37.617778, name: "Moscow, Russia"},
+      {lat:51.499167, lng:-0.124722, name: "London, England"},
+      {lat:48.8583, lng:2.2945, name: "Paris, France"},
+      {lat:52.516306, lng:13.377218, name: "Berlin, Germany"},
+      {lat:39.903333, lng:116.391667, name: "Beijing, China"},
+      {lat:28.613889, lng:77.208889, name: "New Delhi, India"},
+      {lat:33.716667, lng:73.066667, name: "Islamabad, Pakistan"},
+      {lat:35.689506, lng:139.6917, name: "Tokyo, Japan"},
+      {lat:39.019444, lng:125.738056, name: "Pyongyang, North Korea"},
+      {lat:37.566536, lng:126.977969, name: "Seoul, South Korea"},
+      {lat:35.696111, lng:51.423056, name: "Tehran, Iran"},
+      {lat:32.062921463541734, lng:34.77570529998775, name: "Tel Aviv, Israel"},
+      {sep: true, label: "Historical locations"},
+      {lat:33.6773, lng:-106.4754, name: "Trinity site, NM, USA (1945)"},
+      {lat:34.39468, lng:132.45462, name: "Hiroshima, Japan (1945)"},
+      {lat:32.77372, lng:129.86325, name: "Nagasaki, Japan (1945)"},
+      {lat:11.665574250612078, lng:162.1932954709473, name: "Elugelab, Enewetak, Marshall Islands (1952)"},
+      {lat:11.697222, lng:165.271944, name: "Namu Island, Bikini Atoll, Marshall Islands (1954)"},
+      {lat:37.176944, lng:-116.0461112, name: "Sedan Crater, Nevada Test Site, NV, USA (1962)"},
+      {lat:73.807222, lng:54.981667000000016, name: "Tsar Bomba site, Novaya Zemlya, Russia (1961)"}
+    ];
+
+    presets.nukes = [
+      {kt:.02, airburst:0, ff:1, label: `"Davy Crockett" - smallest US bomb produced (20 t)`},
+      {kt:.1, airburst:0, ff:1, label: `Crude nuclear terrorist weapon (100 t)`},
+      {kt:.3, airburst:0, ff:1, label: `B-61 Mod 3 (lowest kt currently in US arsenal) (300 t)`},
+      {kt:.5, airburst:1, ff:1, label: `North Korean weapon tested in 2006 (500 t)`},
+      {kt:6, airburst:1, ff:1, label: `North Korean weapon tested in 2009 (6 kt)`},
+      {kt:10, airburst:1, ff:1, label: `North Korean weapon tested in 2013 (10 kt)`},
+      {kt:10, airburst:0, ff:1, label: `Improvised HEU device - nuclear terrorism (10 kt)`},
+      {kt:15, airburst:1, ff:1, hob: 1968, hob_unit: "ft", label: `"Little Boy" - Hiroshima bomb (15 kt)`},
+      {kt:20, airburst:1, ff:1, hob: 100, hob_unit: "ft", label: `"Gadget" - Trinity test (20 kt)`},
+      {kt:20, airburst:1, ff:1, hob: 1650, hob_unit: "ft", label: `"Fat Man" - Nagasaki bomb (20 kt)`},
+      {kt:45, airburst:1, ff:1, label: `Largest Pakistani weapon tested (45 kt)`},
+      {kt:60, airburst:1, ff:1, label: `Largest Indian weapon tested (60 kt)`},
+      {kt:100, airburst:1, ff:0.5, label: `W-76 (common in US & UK SLBM arsenal) (100 kt)`},
+      {kt:150, airburst:1, ff:0.5, label: `North Korean weapon tested in 2017 (150 kt?)`},
+      {kt:150, airburst:1, ff:0.5, label: `W-80 (currently in US arsenal, cruise missile) (150 kt)`},
+      {kt:300, airburst:1, ff:0.5, label: `W-87 (currently in US arsenal, Minuteman III) (300 kt)`},
+      {kt:300, airburst:1, ff:0.5, label: `TN 80/81 (largest current French warhead) (300 kt)`},
+      {kt:340, airburst:1, ff:0.5, label: `B-61 Mod 7 (currently in US arsenal) (340 kt)`},
+      {kt:350, airburst:1, ff:0.5, label: `W-78 (currently in US arsenal, Minuteman III) (350 kt)`},
+      {kt:455, airburst:1, ff:0.5, label: `W-88 (Trident D5 warhead) (455 kt)`},
+      {kt:500, airburst:0, ff:1, label: `"Ivy King" - largest pure fission weapon tested by USA (500 kt)`},
+      {kt:800, airburst:1, ff:0.5, label: `Topol (SS-25) (currently in Russian arsenal) (800 kt)`},
+      {kt:1000, airburst:1, ff:0.5, label: `W-59 (Minuteman I warhead) (1 Mt)`},
+      {kt:1200, airburst:1, ff:0.5, label: `B-83 (largest bomb in current US arsenal) (1.2 Mt)`},
+      {kt:2300, airburst:1, ff:0.5, label: `R-12 (SS-4) Soviet missile, Cuban missile crisis (2.42 Mt)`},
+      {kt:3300, airburst:1, ff:0.5, label: `Dong Feng-4, China's first deployed ICBM (3.3 Mt)`},
+      {kt:4000, airburst:0, ff:0.55, label: `W-39, US H-bomb, almost accidentally detonated in 1961 (4 Mt)`},
+      {kt:5000, airburst:1, ff:0.5, label: `Dong Feng-5, China's current ICBMs (5 Mt)`},
+      {kt:9000, airburst:1, ff:0.5, label: `W-53 (Titan II warhead, highest kt ICBM US deployed) (9 Mt)`},
+      {kt:10400, airburst:0, ff:0.8, label: `"Ivy Mike" - first H-bomb (10.4 Mt)`},
+      {kt:15000, airburst:0, ff:0.68, label: `"Castle Bravo" - largest US bomb tested (15 Mt)`},
+      {kt:50000, airburst:1, ff:0.03, hob: 13000, hob_unit: "ft", label: `"Tsar Bomba" - largest USSR bomb tested (50 Mt)`},
+      {kt:100000, airburst:1, ff:0.52, label: `"Tsar Bomba" - largest USSR bomb designed (100 Mt)`}
+    ];
+    return presets;
+  }
+  </script>
+
+  <script>
+  (() => {
+    "use strict";
+
+    const NYC = { lat: 40.7128, lng: -74.0060 };
+    const MILES_TO_METERS = 1609.344;
+
+    const VISUALS = {
+      fireball: {
+        name: "Fireball",
+        stroke: "#facc15",
+        fill: "#f59e0b",
+        description: "Maximum fireball radius from the NUKEMAP effects library at the selected height of burst."
+      },
+      blast20: {
+        name: "Heavy blast damage — 20 psi",
+        stroke: "#dc2626",
+        fill: "#ef4444",
+        description: "20 psi overpressure ground radius for the selected height of burst."
+      },
+      radiation500: {
+        name: "Prompt ionizing radiation — 500 rem",
+        stroke: "#16a34a",
+        fill: "#22c55e",
+        description: "500 rem prompt-radiation ground radius; an airburst slant range is projected to the ground."
+      },
+      blast5: {
+        name: "Moderate blast damage — 5 psi",
+        stroke: "#fb7185",
+        fill: "#fda4af",
+        description: "5 psi overpressure ground radius for the selected height of burst."
+      },
+      thermal: {
+        name: "Thermal radiation — 3rd-degree burns",
+        stroke: "#f97316",
+        fill: "#fb923c",
+        description: "Ground radius for NUKEMAP's 100% third-degree-burn criterion."
+      }
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    const sitePreset = $("sitePreset");
+    const weaponPreset = $("weaponPreset");
+    const weaponMeta = $("weaponMeta");
+    const yieldInput = $("yieldInput");
+    const yieldReadout = $("yieldReadout");
+    const coordsReadout = $("coordsReadout");
+    const burstReadout = $("burstReadout");
+    const burstBadge = $("burstBadge");
+    const legendYield = $("legendYield");
+    const legend = $("legend");
+    const detonateBtn = $("detonateBtn");
+    const clearBtn = $("clearBtn");
+    const resetBtn = $("resetBtn");
+    const openKmzBtn = $("openKmzBtn");
+    const errorBanner = $("errorBanner");
+    const libStatus = $("libStatus");
+
+    let map;
+    let marker;
+    let effectLayer;
+    let hasDetonation = false;
+    let engineContexts = [];
+    const menuData = menuPresets();
+
+    function showError(message) {
+      errorBanner.textContent = message;
+      errorBanner.style.display = "block";
+    }
+
+    function clearError() {
+      errorBanner.textContent = "";
+      errorBanner.style.display = "none";
+    }
+
+    function validPositiveNumber(value) {
+      return Number.isFinite(value) && value > 0;
+    }
+
+    function selectedNukePreset() {
+      if (weaponPreset.value === "custom") return null;
+      const index = Number.parseInt(weaponPreset.value, 10);
+      return Number.isInteger(index) ? menuData.nukes[index] : null;
+    }
+
+    function getYieldKt() {
+      if (weaponPreset.value === "custom") {
+        return Number.parseFloat(yieldInput.value);
+      }
+
+      const preset = selectedNukePreset();
+      return preset ? Number(preset.kt) : Number.NaN;
+    }
+
+    function populateSitePresets() {
+      sitePreset.replaceChildren();
+
+      menuData.sites.forEach((site, index) => {
+        const option = document.createElement("option");
+
+        if (site.sep) {
+          option.textContent = "──────── " + site.label + " ────────";
+          option.disabled = true;
+          option.value = "";
+        } else {
+          option.value = String(index);
+          option.textContent = site.name;
+        }
+
+        sitePreset.appendChild(option);
+      });
+
+      // New York entry from the supplied menuPresets()
+      const nyIndex = menuData.sites.findIndex((site) =>
+        !site.sep && site.name === "New York, NY, USA"
+      );
+
+      if (nyIndex >= 0) sitePreset.value = String(nyIndex);
+    }
+
+    function populateWeaponPresets() {
+      weaponPreset.replaceChildren();
+
+      menuData.nukes.forEach((nuke, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = nuke.label;
+        weaponPreset.appendChild(option);
+      });
+
+      const custom = document.createElement("option");
+      custom.value = "custom";
+      custom.textContent = "Custom yield";
+      weaponPreset.appendChild(custom);
+
+      const littleBoyIndex = menuData.nukes.findIndex((nuke) => Number(nuke.kt) === 15);
+      weaponPreset.value = String(littleBoyIndex >= 0 ? littleBoyIndex : 0);
+      syncPresetIntoYieldField();
+    }
+
+    function syncPresetIntoYieldField() {
+      const preset = selectedNukePreset();
+      const isCustom = weaponPreset.value === "custom";
+
+      yieldInput.disabled = !isCustom;
+
+      if (preset) {
+        yieldInput.value = String(preset.kt);
+
+        const burstText = preset.airburst
+          ? "Effects model: airburst" +
+            (preset.hob
+              ? ` at HOB ${preset.hob} ${preset.hob_unit || "ft"}`
+              : " using NUKEMAP optimum 5 psi HOB when available")
+          : "Effects model: surface burst";
+
+        weaponMeta.textContent =
+          burstText + ` • fission fraction ${Math.round(Number(preset.ff || 1) * 100)}%`;
+      } else {
+        weaponMeta.textContent =
+          "Custom yield defaults to a surface burst.";
+      }
+    }
+
+    function formatYield(value) {
+      if (!validPositiveNumber(value)) return "Invalid";
+      if (value >= 1000) {
+        return (value / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }) + " Mt";
+      }
+      return value.toLocaleString(undefined, { maximumFractionDigits: 4 }) + " kt";
+    }
+
+    function formatRadius(meters) {
+      if (!validPositiveNumber(meters)) return "—";
+      if (meters >= 1000) {
+        return (meters / 1000).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }) + " km";
+      }
+      return Math.round(meters).toLocaleString() + " m";
+    }
+
+    /*
+      Build all plausible contexts that can contain NUKEMAP effect functions.
+
+      Different historical revisions have exposed the effects code either as
+      globals or as methods on a NukeEffects instance. Supporting both keeps
+      this single-file app compatible with the remote library revision named
+      in the user's source snippet.
+    */
+    function discoverNukemapContexts() {
+      const contexts = [{ label: "window", object: window }];
+
+      if (typeof window.NukeEffects === "function") {
+        try {
+          contexts.unshift({
+            label: "new NukeEffects()",
+            object: new window.NukeEffects()
+          });
+        } catch (error) {
+          console.warn("NukeEffects constructor exists but could not be instantiated:", error);
+        }
+      }
+
+      for (const name of ["nukeeffects", "nukeEffects", "effects", "NE"]) {
+        if (window[name] && (typeof window[name] === "object" || typeof window[name] === "function")) {
+          contexts.unshift({ label: "window." + name, object: window[name] });
+        }
+      }
+
+      return contexts;
+    }
+
+    function findFunction(candidateNames) {
+      for (const context of engineContexts) {
+        for (const name of candidateNames) {
+          const fn = context.object && context.object[name];
+          if (typeof fn === "function") {
+            return {
+              name,
+              contextLabel: context.label,
+              call: (...args) => fn.apply(context.object, args)
+            };
+          }
+        }
+      }
+      return null;
+    }
+
+    function unitFactorToMeters(unit) {
+      switch (unit) {
+        case "m":
+        case "meter":
+        case "meters":
+          return 1;
+        case "ft":
+        case "foot":
+        case "feet":
+          return 0.3048;
+        case "km":
+        case "kilometer":
+        case "kilometers":
+        case "kilometres":
+          return 1000;
+        case "mi":
+        case "mile":
+        case "miles":
+          return MILES_TO_METERS;
+        default:
+          throw new Error("Unknown distance unit: " + unit);
+      }
+    }
+
+    function unwrapDistanceValue(raw, numericUnit) {
+      /*
+        NUKEMAP methods do NOT all return the same distance unit.
+
+        range_from_psi_hob(...)               -> feet
+        fireball_radius(...)                  -> miles
+        initial_nuclear_radiation_distance(...) -> miles
+        thermal_distance(...)                 -> miles
+
+        Treating blast feet as miles creates a ~5,280x radius error.
+      */
+      if (Number.isFinite(Number(raw)) && Number(raw) >= 0) {
+        const n = Number(raw);
+        return {
+          meters: n * unitFactorToMeters(numericUnit),
+          raw: n,
+          rawUnit: numericUnit,
+          unitPath: numericUnit + " → meters"
+        };
+      }
+
+      if (raw && typeof raw === "object") {
+        const unitCandidates = [
+          ["meters", "meters"],
+          ["meter", "meters"],
+          ["m", "m"],
+          ["feet", "feet"],
+          ["ft", "ft"],
+          ["km", "km"],
+          ["kilometers", "kilometers"],
+          ["kilometres", "kilometres"],
+          ["mi", "mi"],
+          ["miles", "miles"]
+        ];
+
+        for (const [key, unit] of unitCandidates) {
+          if (Number.isFinite(Number(raw[key])) && Number(raw[key]) >= 0) {
+            const n = Number(raw[key]);
+            return {
+              meters: n * unitFactorToMeters(unit),
+              raw: n,
+              rawUnit: unit,
+              unitPath: unit + " → meters"
+            };
+          }
+        }
+      }
+
+      throw new Error("NUKEMAP returned an unrecognized distance value: " + String(raw));
+    }
+
+    function callDistance(methodNames, argumentSets, label, numericUnit) {
+      const method = findFunction(methodNames);
+
+      if (!method) {
+        throw new Error(
+          label + ": none of these NUKEMAP functions were found: " +
+          methodNames.join(", ")
+        );
+      }
+
+      let lastError = null;
+
+      for (const args of argumentSets) {
+        try {
+          const raw = method.call(...args);
+          const distance = unwrapDistanceValue(raw, numericUnit);
+
+          if (Number.isFinite(distance.meters) && distance.meters >= 0) {
+            return {
+              radius: distance.meters,
+              raw: distance.raw,
+              rawUnit: distance.rawUnit,
+              api:
+                method.contextLabel + "." + method.name +
+                "(" + args.map(String).join(", ") + ")",
+              unitPath: distance.unitPath
+            };
+          }
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      throw new Error(
+        label + ": " + method.name + " did not return a usable radius." +
+        (lastError ? " " + lastError.message : "")
+      );
+    }
+
+    function hobToFeet(value, unit) {
+      const n = Number(value || 0);
+
+      switch ((unit || "ft").toLowerCase()) {
+        case "ft": return n;
+        case "m": return n / 0.3048;
+        case "km": return n * 1000 / 0.3048;
+        case "mi": return n * 5280;
+        default: return n;
+      }
+    }
+
+    function getBurstModel(yieldKt) {
+      const preset = selectedNukePreset();
+
+      if (!preset) {
+        return {
+          airburst: false,
+          hobFt: 0,
+          source: "Custom yield — surface burst"
+        };
+      }
+
+      if (!preset.airburst) {
+        return {
+          airburst: false,
+          hobFt: 0,
+          source: "Historical preset — surface burst"
+        };
+      }
+
+      if (Number.isFinite(Number(preset.hob)) && Number(preset.hob) > 0) {
+        return {
+          airburst: true,
+          hobFt: hobToFeet(preset.hob, preset.hob_unit || "ft"),
+          source:
+            "Historical preset — airburst at " +
+            Number(preset.hob).toLocaleString() + " " +
+            (preset.hob_unit || "ft")
+        };
+      }
+
+      const opt = findFunction(["opt_height_for_psi"]);
+
+      if (opt) {
+        try {
+          const hobFt = Number(opt.call(yieldKt, 5));
+
+          if (Number.isFinite(hobFt) && hobFt > 0) {
+            return {
+              airburst: true,
+              hobFt,
+              source: "Preset airburst — NUKEMAP optimum HOB for 5 psi"
+            };
+          }
+        } catch (_) {}
+      }
+
+      return {
+        airburst: true,
+        hobFt: 0,
+        source: "Preset airburst — no explicit HOB available"
+      };
+    }
+
+    function slantMilesToGroundMeters(slantMiles, hobFt) {
+      if (!(hobFt > 0)) {
+        return slantMiles * MILES_TO_METERS;
+      }
+
+      const heightMiles = hobFt / 5280;
+      const groundMethod = findFunction(["ground_range_from_slant_range"]);
+
+      let groundMiles;
+
+      if (groundMethod) {
+        groundMiles = Number(groundMethod.call(slantMiles, heightMiles));
+      } else {
+        groundMiles =
+          slantMiles <= heightMiles
+            ? 0
+            : Math.sqrt(
+                slantMiles * slantMiles -
+                heightMiles * heightMiles
+              );
+      }
+
+      if (!Number.isFinite(groundMiles) || groundMiles < 0) {
+        throw new Error("Could not convert slant range to ground range.");
+      }
+
+      return groundMiles * MILES_TO_METERS;
+    }
+
+    function calculateBlast(yieldKt, psi, burst) {
+      return callDistance(
+        ["range_from_psi_hob"],
+        [[yieldKt, psi, burst.hobFt]],
+        psi + " psi blast",
+        "ft"
+      );
+    }
+
+    function calculateFireball(yieldKt, burst) {
+      return callDistance(
+        ["fireball_radius"],
+        [[yieldKt, burst.hobFt]],
+        "Fireball",
+        "miles"
+      );
+    }
+
+    function calculatePromptRadiation(yieldKt, rem, burst) {
+      const result = callDistance(
+        ["initial_nuclear_radiation_distance"],
+        [[yieldKt, rem, burst.airburst]],
+        rem + " rem prompt radiation",
+        "miles"
+      );
+
+      if (burst.airburst && burst.hobFt > 0) {
+        result.radius = slantMilesToGroundMeters(result.raw, burst.hobFt);
+        result.unitPath = "miles slant range → ground range → meters";
+      }
+
+      return result;
+    }
+
+    function calculateThermalThirdDegree100(yieldKt, burst) {
+      const result = callDistance(
+        ["thermal_distance"],
+        [[yieldKt, "_3rd-100", burst.airburst]],
+        "Thermal",
+        "miles"
+      );
+
+      if (burst.airburst && burst.hobFt > 0) {
+        result.radius = slantMilesToGroundMeters(result.raw, burst.hobFt);
+        result.unitPath = "miles slant range → ground range → meters";
+      }
+
+      return result;
+    }
+
+    function calculateEffectsWithNukemap(yieldKt) {
+      const burst = getBurstModel(yieldKt);
+
+      const fireball = calculateFireball(yieldKt, burst);
+      const blast20 = calculateBlast(yieldKt, 20, burst);
+      const radiation500 =
+        calculatePromptRadiation(yieldKt, 500, burst);
+      const blast5 = calculateBlast(yieldKt, 5, burst);
+      const thermal =
+        calculateThermalThirdDegree100(yieldKt, burst);
+
+      return {
+        burst,
+        effects: [
+          { key: "fireball", ...VISUALS.fireball, ...fireball },
+          { key: "blast20", ...VISUALS.blast20, ...blast20 },
+          { key: "radiation500", ...VISUALS.radiation500, ...radiation500 },
+          { key: "blast5", ...VISUALS.blast5, ...blast5 },
+          { key: "thermal", ...VISUALS.thermal, ...thermal }
+        ]
+      };
+    }
+
+    function updateLibraryStatus() {
+      engineContexts = discoverNukemapContexts();
+
+      const required = {
+        blast: !!findFunction(["range_from_psi_hob"]),
+        fireball: !!findFunction(["fireball_radius", "fireballRadius"]),
+        radiation: !!findFunction([
+          "initial_nuclear_radiation_distance",
+          "initialNuclearRadiationDistance",
+          "initial_radiation_distance"
+        ]),
+        thermal: !!findFunction([
+          "thermal_distance",
+          "thermal_radiation_distance",
+          "thermalDistance"
+        ])
+      };
+
+      const ready = Object.values(required).every(Boolean);
+
+      if (ready) {
+        libStatus.classList.remove("status-bad");
+        libStatus.classList.add("status-ok");
+        libStatus.innerHTML = '<span class="dot"></span>NUKEMAP effects API ready';
+        return true;
+      }
+
+      libStatus.classList.remove("status-ok");
+      libStatus.classList.add("status-bad");
+      libStatus.innerHTML = '<span class="dot"></span>NUKEMAP API incomplete';
+
+      const missing = Object.entries(required)
+        .filter(([, ok]) => !ok)
+        .map(([name]) => name)
+        .join(", ");
+
+      showError(
+        "The remote NUKEMAP effects library loaded without all expected API methods.\n" +
+        "Missing calculation groups: " + missing + ".\n" +
+        "Open the browser console to inspect the library version/API."
+      );
+
+      return false;
+    }
+
+    function renderLegend(effects) {
+      legend.replaceChildren();
+
+      for (const effect of effects) {
+        const item = document.createElement("div");
+        item.className = "legend-item";
+
+        const swatch = document.createElement("div");
+        swatch.className = "swatch";
+        swatch.style.color = effect.stroke;
+        swatch.style.background = effect.fill;
+
+        const content = document.createElement("div");
+        const head = document.createElement("div");
+        head.className = "legend-head";
+
+        const name = document.createElement("div");
+        name.className = "legend-name";
+        name.textContent = effect.name;
+
+        const radius = document.createElement("div");
+        radius.className = "legend-radius";
+        radius.textContent = formatRadius(effect.radius);
+
+        const desc = document.createElement("div");
+        desc.className = "legend-desc";
+        desc.textContent = effect.description;
+
+        const api = document.createElement("div");
+        api.className = "legend-api";
+        api.textContent = "API: " + effect.api;
+
+        head.append(name, radius);
+        content.append(head, desc, api);
+        item.append(swatch, content);
+        legend.append(item);
+      }
+    }
+
+    function updateYieldReadout() {
+      const y = getYieldKt();
+      const text = formatYield(y);
+      yieldReadout.textContent = text;
+      legendYield.textContent = text;
+    }
+
+    function updateCoords() {
+      if (!marker) return;
+      const p = marker.getLatLng();
+      coordsReadout.textContent = `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+    }
+
+    function clearEffects() {
+      if (effectLayer) effectLayer.clearLayers();
+      hasDetonation = false;
+      legend.replaceChildren();
+      burstReadout.textContent = "No active detonation";
+      burstBadge.textContent = "Historical burst geometry";
+
+      dets.length = 0;
+      openKmzBtn.disabled = true;
+      $("#exportKMZ").prop("disabled", true);
+    }
+
+    function drawEffects({ fit = true } = {}) {
+      const y = getYieldKt();
+
+      if (!validPositiveNumber(y)) {
+        showError("Enter a valid yield greater than zero.");
+        return;
+      }
+
+      if (!updateLibraryStatus()) return;
+
+      let effects;
+      try {
+        const calculated = calculateEffectsWithNukemap(y);
+        effects = calculated.effects;
+        var burst = calculated.burst;
+      } catch (error) {
+        console.error(error);
+        showError(
+          "NUKEMAP calculation failed:\n" + error.message +
+          "\n\nNo simplified fallback was used."
+        );
+        return;
+      }
+
+      const absurd = effects.find(
+        (effect) => effect.radius > 2000000
+      );
+
+      if (absurd && y < 100) {
+        showError(
+          "Sanity check stopped rendering: a sub-100 kt weapon produced " +
+          "an effect radius over 2,000 km. This indicates a unit/API " +
+          "mismatch, not a physically credible result."
+        );
+        return;
+      }
+
+      clearError();
+
+      burstReadout.textContent =
+        burst.airburst
+          ? `${burst.source} (${Math.round(burst.hobFt).toLocaleString()} ft / ` +
+            `${Math.round(burst.hobFt * 0.3048).toLocaleString()} m)`
+          : burst.source;
+
+      burstBadge.textContent =
+        burst.airburst ? "Airburst effects" : "Surface-burst effects";
+
+      effectLayer.clearLayers();
+
+      const center = marker.getLatLng();
+      const drawOrder = [...effects].sort((a, b) => b.radius - a.radius);
+
+      for (const effect of drawOrder) {
+        L.circle(center, {
+          radius: effect.radius,
+          color: effect.stroke,
+          weight: 2,
+          opacity: .98,
+          fillColor: effect.fill,
+          fillOpacity: .18,
+          interactive: false
+        }).addTo(effectLayer);
+      }
+
+      hasDetonation = true;
+      renderLegend(effects);
+
+      /*
+        Store the current active detonation in the NUKEMAP-style structure
+        expected by the supplied exportKMZ() function.
+
+        Historical presets preserve their burst geometry. Presets with an
+        explicit HOB use it directly; airburst presets without a stored HOB use
+        NUKEMAP's optimum-height-for-5-psi helper when available.
+      */
+      const chosenPreset = selectedNukePreset();
+      dets.length = 0;
+      dets.push({
+        airburst: burst.airburst ? 1 : 0,
+        hob: burst.hobFt,
+        hob_ft: burst.hobFt,
+        hob_opt: 2,
+        hob_opt_psi: 5,
+        fireball: 1,
+        psi: [20, 5],
+        rem: [500],
+        therm: ["_3rd-100"],
+        fallout: 0,
+        fallout_wind: 15,
+        ff: chosenPreset ? Number(chosenPreset.ff || 1) : 1,
+        fallout_angle: 225,
+        fallout_rad_doses: [1, 10, 100, 1000],
+        kt: y,
+        pos: marker.getLatLng()
+      });
+
+      openKmzBtn.disabled = false;
+      $("#exportKMZ").prop("disabled", false);
+
+      if (fit) {
+        const maxRadius = Math.max(...effects.map((e) => e.radius));
+        const bounds = L.circle(center, { radius: maxRadius }).getBounds();
+        const mobile = window.matchMedia("(max-width:700px)").matches;
+
+        map.fitBounds(bounds, {
+          paddingTopLeft: mobile ? [30, 30] : [440, 35],
+          paddingBottomRight: [35, 35],
+          animate: true,
+          maxZoom: 14
+        });
+      }
+    }
+
+    function buildMarker() {
+      const icon = L.divIcon({
+        className: "",
+        iconSize: [42, 42],
+        iconAnchor: [21, 21],
+        html:
+          '<div class="gz-wrap">' +
+            '<div class="gz-ring"></div>' +
+            '<div class="gz-v"></div>' +
+            '<div class="gz-h"></div>' +
+            '<div class="gz-dot"></div>' +
+          '</div>'
+      });
+
+      return L.marker([NYC.lat, NYC.lng], {
+        draggable: true,
+        icon,
+        keyboard: true,
+        title: "Ground zero"
+      });
+    }
+
+    function initMap() {
+      if (typeof L === "undefined") {
+        showError("Leaflet failed to load. Internet access is required.");
+        return;
+      }
+
+      map = L.map("map", {
+        zoomControl: true,
+        preferCanvas: true,
+        minZoom: 2,
+        worldCopyJump: true
+      }).setView([NYC.lat, NYC.lng], 11);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        subdomains: "abc",
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      effectLayer = L.layerGroup().addTo(map);
+      marker = buildMarker().addTo(map);
+
+      marker.on("drag", updateCoords);
+      marker.on("dragend", () => {
+        updateCoords();
+        if (hasDetonation) drawEffects({ fit: false });
+      });
+
+      map.on("click", (event) => {
+        marker.setLatLng(event.latlng);
+        updateCoords();
+        if (hasDetonation) drawEffects({ fit: false });
+      });
+
+      updateCoords();
+      requestAnimationFrame(() => map.invalidateSize());
+      setTimeout(() => map.invalidateSize(), 100);
+    }
+
+    sitePreset.addEventListener("change", () => {
+      const index = Number.parseInt(sitePreset.value, 10);
+      const site = menuData.sites[index];
+
+      if (!site || site.sep) return;
+
+      const target = L.latLng(site.lat, site.lng);
+      marker.setLatLng(target);
+      map.setView(target, 11);
+      updateCoords();
+
+      if (hasDetonation) {
+        drawEffects({ fit: false });
+      }
+    });
+
+    weaponPreset.addEventListener("change", () => {
+      syncPresetIntoYieldField();
+
+      if (weaponPreset.value === "custom") {
+        yieldInput.focus();
+        yieldInput.select();
+      }
+
+      updateYieldReadout();
+
+      if (hasDetonation && validPositiveNumber(getYieldKt())) {
+        drawEffects({ fit: false });
+      }
+    });
+
+    yieldInput.addEventListener("input", () => {
+      updateYieldReadout();
+      if (hasDetonation && validPositiveNumber(getYieldKt())) {
+        drawEffects({ fit: false });
+      }
+    });
+
+    yieldInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") drawEffects({ fit: true });
+    });
+
+    detonateBtn.addEventListener("click", () => drawEffects({ fit: true }));
+    clearBtn.addEventListener("click", clearEffects);
+    openKmzBtn.addEventListener("click", init_kmzmenu);
+
+    resetBtn.addEventListener("click", () => {
+      const nyIndex = menuData.sites.findIndex((site) =>
+        !site.sep && site.name === "New York, NY, USA"
+      );
+      const nySite = nyIndex >= 0 ? menuData.sites[nyIndex] : NYC;
+
+      if (nyIndex >= 0) sitePreset.value = String(nyIndex);
+
+      marker.setLatLng([nySite.lat, nySite.lng]);
+      map.setView([nySite.lat, nySite.lng], 11);
+      updateCoords();
+
+      if (hasDetonation) drawEffects({ fit: false });
+    });
+
+    populateSitePresets();
+    populateWeaponPresets();
+    updateYieldReadout();
+    initMap();
+
+    /*
+      Give the remote scripts a moment to finish their parser-time setup,
+      then report whether the NUKEMAP calculation API is present.
+    */
+    setTimeout(updateLibraryStatus, 0);
+  })();
+  </script>
+</body>
+</html>
